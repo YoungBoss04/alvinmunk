@@ -28,7 +28,8 @@ export const CONTENT_SECTIONS: ContentSection[] = ['rewards', 'gates', 'quests']
 
 // ── Admin gate ──
 
-/** `DataKey::Admin`: the instance-storage key each contract's `init` stores its admin under. */
+/** `DataKey::Admin`: the instance-storage key each contract's constructor (its `init`, before
+ *  #127) stores its admin under. */
 export const ADMIN_KEY = enumKey('Admin');
 
 /** The admin a contract stores on-chain (`null` if it has none, or isn't deployed). */

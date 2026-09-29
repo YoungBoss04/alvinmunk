@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 # One-shot clean redeploy of all 5 alvinmunk contracts (now with upgrade() + att_set v1),
-# fully wired: constructor → attesters → quests → reward table + treasury → gates.
+# fully wired: deploy (each contract's constructor sets its admin and wiring in the deploy
+# transaction itself, #127) → attesters → quests → reward table + treasury → gates.
 # Prereq: `passport-admin` funded on testnet; contracts built (stellar contract build).
 set -uo pipefail
 
 ADMIN=passport-admin
 NET=testnet
-USDC=CAKT2EK2SFGNXTXVSYZLLXA5YB5QPVHHLTUMRHLJTF5RFFAFMIRNPZT2
+USDC=CAKT2EK2SFGNXTXVSYZLZXA5YB5QPVHLTVUMRHLJTF5RFFAFMIRNPZT2
 ATTKEY=45a2a358b25f4a7e66253e09c9ff7a322f732fbe8befe9cb41cebf8087fae834
 W="$(dirname "$0")/../contracts/target/wasm32v1-none/release"
 ADMIN_ADDR=$(stellar keys address "$ADMIN")
 
-dep() { stellar contract deploy --wasm "$W/$1" --source "$ADMIN" --network "$NET" -- "${@2:}" 2>/dev/null; }
+# $1 = wasm; the rest are the contract's constructor arguments. A failed deploy stops the
+# script: every later step would wire an empty id.
+dep() { stellar contract deploy --wasm "$W/$1" --source "$ADMIN" --network "$NET" -- "${@:2}" 2>/dev/null; }
+fail() { echo "  ✗ FAILED: deploy $1" >&2; exit 1; }
 # retry wrapper for the (idempotent) post-deploy calls — survives transient TxBadSeq races.
 inv() {
   local n=1
@@ -21,15 +25,19 @@ inv() {
   done
 }
 
-echo "==> deploying 5 contracts (constructor-initialized)"
-REP=$(dep alvinmunk_reputation.wasm --admin "$ADMIN_ADDR");        echo "  reputation=$REP"
-QUEST=$(dep alvinmunk_quest_registry.wasm --admin "$ADMIN_ADDR" --reputation "$REP");  echo "  quest=$QUEST"
-REWARDS=$(dep alvinmunk_rewards.wasm --admin "$ADMIN_ADDR" --usdc "$USDC" --reputation "$REP");        echo "  rewards=$REWARDS"
-REGISTRY=$(dep alvinmunk_registry.wasm --admin "$ADMIN_ADDR");      echo "  registry=$REGISTRY"
-GATE=$(dep alvinmunk_gate.wasm --admin "$ADMIN_ADDR" --reputation "$REP");              echo "  gate=$GATE"
-REWARDS=$(dep alvinmunk_rewards.wasm --admin "$ADMIN_ADDR" --usdc "$USDC" --reputation "$REP) # no-op
+echo "==> deploying 5 contracts"
+REP=$(dep alvinmunk_reputation.wasm --admin "$ADMIN_ADDR") || fail reputation
+echo "  reputation=$REP"
+QUEST=$(dep alvinmunk_quest_registry.wasm --admin "$ADMIN_ADDR" --reputation "$REP") || fail quest_registry
+echo "  quest=$QUEST"
+REWARDS=$(dep alvinmunk_rewards.wasm --admin "$ADMIN_ADDR" --usdc "$USDC" --reputation "$REP") || fail rewards
+echo "  rewards=$REWARDS"
+REGISTRY=$(dep alvinmunk_registry.wasm --admin "$ADMIN_ADDR") || fail registry
+echo "  registry=$REGISTRY"
+GATE=$(dep alvinmunk_gate.wasm --admin "$ADMIN_ADDR" --reputation "$REP") || fail gate
+echo "  gate=$GATE"
 
-echo "==> post-deploy wiring"
+echo "==> wiring"
 inv "$REWARDS" set_quest_registry --quest_registry "$QUEST" # streak-gated rewards read get_streak
 
 echo "==> attesters"
@@ -54,7 +62,7 @@ inv "$GATE" create_gate --id 1 --track 0 --min 20 --label '"Inner circle"'
 inv "$GATE" create_gate --id 2 --track 1 --min 30 --label '"Bounty board"'
 
 echo ""
-echo "===== NEW CONTRACT IDS…====="
+echo "===== NEW CONTRACT IDS ====="
 echo "NEXT_PUBLIC_REPUTATION_CONTRACT_ID=$REP"
 echo "NEXT_PUBLIC_QUEST_REGISTRY_CONTRACT_ID=$QUEST"
 echo "NEXT_PUBLIC_REWARDS_CONTRACT_ID=$REWARDS"

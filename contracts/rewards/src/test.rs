@@ -45,14 +45,12 @@ fn setup_in(env: Env) -> Fixture<'static> {
     let attester_sk = signing_key(7);
     let attester_pub = BytesN::from_array(&env, &attester_sk.verifying_key().to_bytes());
 
-    let rep_id = env.register(ReputationContract, ());
+    let rep_id = env.register(ReputationContract, (&admin,));
     let rep = ReputationContractClient::new(&env, &rep_id);
-    rep.init(&admin);
     rep.add_attester(&attester);
 
-    let quest_id = env.register(QuestRegistryContract, ());
+    let quest_id = env.register(QuestRegistryContract, (&admin, &rep_id));
     let quest = QuestRegistryContractClient::new(&env, &quest_id);
-    quest.init(&admin, &rep_id);
     quest.add_attester_key(&attester_pub);
     rep.add_attester(&quest_id);
 
@@ -60,11 +58,10 @@ fn setup_in(env: Env) -> Fixture<'static> {
     let sac = env.register_stellar_asset_contract_v2(admin.clone());
     let usdc = sac.address();
 
-    let rewards_id = env.register(RewardsContract, ());
-    let rewards = RewardsContractClient::new(&env, &rewards_id);
     // Not wired to the QuestRegistry: like a deployed contract upgraded before
     // `set_quest_registry` runs. Streak tests wire it with `streak_setup()`.
-    rewards.init(&admin, &usdc, &rep_id);
+    let rewards_id = env.register(RewardsContract, (&admin, &usdc, &rep_id));
+    let rewards = RewardsContractClient::new(&env, &rewards_id);
 
     // Fund the rewards treasury with USDC.
     token::StellarAssetClient::new(&env, &usdc).mint(&rewards_id, &1_000);
@@ -480,9 +477,8 @@ fn non_admin_upgrade_reverts() {
     let admin = Address::generate(&env);
     let usdc = Address::generate(&env);
     let rep = Address::generate(&env);
-    let id = env.register(RewardsContract, ());
+    let id = env.register(RewardsContract, (&admin, &usdc, &rep));
     let client = RewardsContractClient::new(&env, &id);
-    client.init(&admin, &usdc, &rep);
     let hash = soroban_sdk::BytesN::from_array(&env, &[1; 32]);
     client.upgrade(&hash);
 }
@@ -1055,9 +1051,11 @@ fn set_reward_min_streak_unknown_reward_reverts() {
 fn non_admin_cannot_set_quest_registry() {
     let env = Env::default();
     let admin = Address::generate(&env);
-    let id = env.register(RewardsContract, ());
+    let id = env.register(
+        RewardsContract,
+        (&admin, &Address::generate(&env), &Address::generate(&env)),
+    );
     let client = RewardsContractClient::new(&env, &id);
-    client.init(&admin, &Address::generate(&env), &Address::generate(&env));
     client.set_quest_registry(&Address::generate(&env));
 }
 
@@ -1541,4 +1539,30 @@ fn daily_paid_counter_lives_two_days() {
         });
         assert_eq!(paid_ttl, DAY_LEDGERS * 2);
     }
+}
+
+/// #127: the release build is set up by its constructor, inside the deploy — registering it
+/// takes the constructor's arguments, it has no `init` left for anyone to call afterwards,
+/// and `upgrade` asks the constructor's admin to sign.
+#[test]
+fn the_release_build_is_set_up_by_its_constructor() {
+    use soroban_sdk::IntoVal as _;
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = soroban_sdk::Address::generate(&env);
+    let (usdc, rep) = (
+        soroban_sdk::Address::generate(&env),
+        soroban_sdk::Address::generate(&env),
+    );
+    let id = env.register(REWARDS_WASM, (&admin, &usdc, &rep));
+    let init = soroban_sdk::Symbol::new(&env, "init");
+    let impostor = soroban_sdk::Address::generate(&env);
+    let call = soroban_sdk::vec![&env, impostor.into_val(&env)];
+    assert!(env
+        .try_invoke_contract::<(), soroban_sdk::Error>(&id, &init, call)
+        .is_err());
+
+    let hash = env.deployer().upload_contract_wasm(REWARDS_WASM);
+    RewardsContractClient::new(&env, &id).upgrade(&hash);
+    assert_eq!(env.auths()[0].0, admin);
 }

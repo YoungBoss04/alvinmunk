@@ -37,13 +37,11 @@ fn setup_in(env: Env) -> Fixture<'static> {
     let attester_sk = signing_key(7);
     let attester_pub = BytesN::from_array(&env, &attester_sk.verifying_key().to_bytes());
 
-    let rep_id = env.register(ReputationContract, ());
+    let rep_id = env.register(ReputationContract, (&admin,));
     let rep = ReputationContractClient::new(&env, &rep_id);
-    rep.init(&admin);
 
-    let quest_id = env.register(QuestRegistryContract, ());
+    let quest_id = env.register(QuestRegistryContract, (&admin, &rep_id));
     let quest = QuestRegistryContractClient::new(&env, &quest_id);
-    quest.init(&admin, &rep_id);
 
     // Wire: the QuestRegistry CONTRACT is an allowlisted attester in Reputation (for the
     // award_xp cross-call); the off-chain attester ed25519 PUBKEY is allowlisted here.
@@ -384,7 +382,11 @@ fn quest_payload_matches_the_documented_bytes() {
         &env,
         "CAIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRCEIRDB3V",
     );
-    env.register_at(&contract, QuestRegistryContract, ());
+    env.register_at(
+        &contract,
+        QuestRegistryContract,
+        (Address::generate(&env), Address::generate(&env)),
+    );
     let client = QuestRegistryContractClient::new(&env, &contract);
     let classic = Address::from_str(
         &env,
@@ -926,9 +928,8 @@ fn non_admin_upgrade_reverts() {
     let env = Env::default();
     let admin = Address::generate(&env);
     let rep = Address::generate(&env);
-    let id = env.register(QuestRegistryContract, ());
+    let id = env.register(QuestRegistryContract, (&admin, &rep));
     let client = QuestRegistryContractClient::new(&env, &id);
-    client.init(&admin, &rep);
     let hash = soroban_sdk::BytesN::from_array(&env, &[1; 32]);
     client.upgrade(&hash);
 }
@@ -1170,9 +1171,11 @@ fn binding_keeps_the_replay_guard_and_inactive_check() {
 #[should_panic(expected = "HostError: Error(Auth, InvalidAction)")]
 fn non_admin_set_quest_attester_reverts() {
     let env = Env::default();
-    let id = env.register(QuestRegistryContract, ());
+    let id = env.register(
+        QuestRegistryContract,
+        (&Address::generate(&env), &Address::generate(&env)),
+    );
     let client = QuestRegistryContractClient::new(&env, &id);
-    client.init(&Address::generate(&env), &Address::generate(&env));
     client.set_quest_attester(&1u32, &BytesN::from_array(&env, &[1; 32]));
 }
 
@@ -1180,9 +1183,11 @@ fn non_admin_set_quest_attester_reverts() {
 #[should_panic(expected = "HostError: Error(Auth, InvalidAction)")]
 fn non_admin_clear_quest_attester_reverts() {
     let env = Env::default();
-    let id = env.register(QuestRegistryContract, ());
+    let id = env.register(
+        QuestRegistryContract,
+        (&Address::generate(&env), &Address::generate(&env)),
+    );
     let client = QuestRegistryContractClient::new(&env, &id);
-    client.init(&Address::generate(&env), &Address::generate(&env));
     client.clear_quest_attester(&1u32);
 }
 
@@ -1503,9 +1508,11 @@ fn a_quest_bound_key_is_budgeted_too() {
 #[should_panic(expected = "HostError: Error(Auth, InvalidAction)")]
 fn non_admin_set_attester_budget_reverts() {
     let env = Env::default();
-    let id = env.register(QuestRegistryContract, ());
+    let id = env.register(
+        QuestRegistryContract,
+        (&Address::generate(&env), &Address::generate(&env)),
+    );
     let client = QuestRegistryContractClient::new(&env, &id);
-    client.init(&Address::generate(&env), &Address::generate(&env));
     client.set_attester_budget(&BytesN::from_array(&env, &[1; 32]), &100u64);
 }
 
@@ -1536,4 +1543,27 @@ proptest! {
         prop_assert_eq!(f.rep.get_earned(&user), used);
         prop_assert!(used <= budget);
     }
+}
+
+/// #127: the release build is set up by its constructor, inside the deploy — registering it
+/// takes the constructor's arguments, it has no `init` left for anyone to call afterwards,
+/// and `upgrade` asks the constructor's admin to sign.
+#[test]
+fn the_release_build_is_set_up_by_its_constructor() {
+    use soroban_sdk::IntoVal as _;
+    let env = Env::default();
+    env.mock_all_auths();
+    let admin = soroban_sdk::Address::generate(&env);
+    let rep = soroban_sdk::Address::generate(&env);
+    let id = env.register(QUEST_WASM, (&admin, &rep));
+    let init = soroban_sdk::Symbol::new(&env, "init");
+    let impostor = soroban_sdk::Address::generate(&env);
+    let call = soroban_sdk::vec![&env, impostor.into_val(&env)];
+    assert!(env
+        .try_invoke_contract::<(), soroban_sdk::Error>(&id, &init, call)
+        .is_err());
+
+    let hash = env.deployer().upload_contract_wasm(QUEST_WASM);
+    QuestRegistryContractClient::new(&env, &id).upgrade(&hash);
+    assert_eq!(env.auths()[0].0, admin);
 }
