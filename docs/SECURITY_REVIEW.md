@@ -23,20 +23,20 @@ tests pass** after the fixes.
 | **`cargo deny`** | Advisories + banned crates + source trust | **bans ok, sources ok** |
 | **`cargo clippy`** (`-W all -W pedantic -W arithmetic_side_effects -W unwrap_used`) | Lints incl. security-relevant | **0 production warnings** |
 | **`cargo-geiger`** / grep | `unsafe` code detection | **0 `unsafe` blocks** in any contract |
-| **`cargo test`** (incl. property/fuzz) | Behavioural correctness | **59 tests pass** |
+| **`cargo test** (incl. property/fuzz) | Behavioural correctness | **59 tests pass** |
 
 ## Hardening already in place
 
 - **`overflow-checks = true`** in the release profile — arithmetic overflow **aborts the
   transaction** rather than wrapping silently (critical for a financial contract).
-- **`panic = "abort"`** — no unwinding.
-- **`#![no_std]`** on all 5 contracts — minimal attack surface.
+- **panic = "abort"** — no unwinding.
+- **#![no_std]** on all 5 contracts — minimal attack surface.
 - **No `unsafe`** anywhere in the contract code.
 
 ## Critical findings — FIXED
 
 Scout flagged 4 `integer_overflow_or_underflow` sites. All operate on values that are
-practically unreachable (a `u64` sequence/timestamp or a capped `u32` counter would need ~2⁶⁴
+practically unreachable (a `u64` sequence/timestamp or a capped `u32` counter would need ~2⁶
 operations to overflow) **and** `overflow-checks = true` already makes any overflow abort — so
 none were exploitable. They were nonetheless converted to explicit **`saturating_add`** so the
 arithmetic can never wrap and the intent is self-documenting:
@@ -54,9 +54,9 @@ Re-scan after the fix: **0 critical.**
 
 | Category | Count | Verdict |
 | --- | --- | --- |
-| `unnecessary_admin_parameter` | 5 | **False positive** — the `admin` argument to `init()` is *stored* (`set(DataKey::Admin, admin)`) and used for later access control (`upgrade`, admin-gated setters), not unused. |
-| `missing_new_admin_auth` | 5 | **Fixed** — the flagged `init()` entrypoint no longer exists. Each contract now sets its admin in a `__constructor(env, admin)` that runs atomically inside the deploy transaction, so there is no post-deploy window in which an observer could call `init` with their own admin and be protected by the `AlreadyInitialized` guard. Deploy scripts pass `-- --admin <ADDR>` to `stellar contract deploy`. There is no unprotected `set_admin`; admin-mutating paths (`upgrade`) require `admin.require_auth()`. A 2-step ownership transfer is a possible future enhancement, not a vulnerability. |
-| `unsafe_unwrap` | 5 | **Accepted low-risk** — every flagged `unwrap()` reads a config address (`Usdc`, `Reputation`) that is set at `init()`; it can only be `None` on a mis-initialised contract, in which case it aborts (no silent failure, no exploit). |
+| `unnecessary_admin_parameter` | 5 | **False positive** — the `admin` argument to the constructor is *stored* (`set(DataKey::Admin, admin`)) and used for later access control (`upgrade`, admin-gated setters), not unused. |
+| `missing_new_admin_auth` | 5 | **Resolved** — the flag was on the one-time `init()` entrypoint, which let anyone claim admin in the window between deploy and initialization. The contracts now take the admin as a constructor argument (`__constructor`), so deploy and init are one atomic transaction and there is no post-deploy window to seize. There is still no unprotected `set_admin`; admin-mutating paths (`upgrade`) require `admin.require_auth()`. A 2-step ownership transfer is a possible future enhancement, not a vulnerability. |
+| `unsafe_unwrap` | 5 | **Accepted low-risk** — every flagged `unwrap()` reads a config address (`Usdc`, `Reputation`) that is set at construction time; it can only be `None` on a mis-initialised contract, in which case it aborts (no silent failure, no exploit). |
 | `dos_unexpected_revert_with_storage` | 4 | **Accepted low-risk** — the flagged reverts are intentional guard clauses (`require_auth`, cap checks) that abort a single caller's tx; no shared-state DoS. |
 | `dynamic_storage` | 3 | **Accepted** — dynamic keys are per-user/per-day namespaced (`DailyCount(addr, day)`, handle/address maps); this is the intended data model. Caller-sized values inside an entry are capped: `mint_vouch_signed` / `mint_vouches` / `mint_vouch` revert with `NoteTooLong` (#12) on a `Vouch.note` over 240 UTF-8 bytes (unbounded until issue #124; 240 is the web app's 60-character limit at 4 bytes per character), so no voucher can inflate what a claim rewrites, and a registry bio is capped at 80 bytes. |
 
@@ -70,7 +70,7 @@ pre-computed), an XP stake slashed on unclaimed vouches, and a treasury circuit 
 
 ## No-value tips: faked "received a spend" (issue #144)
 
-**Threat.** `tip(from, to, amount)` validated only the wallet's own gates — paused, sender
+[**Threat.** `tip(from, to, amount)` validated only the wallet's own gates — paused, sender
 auth, not frozen — and handed the transfer straight to the Stellar Asset Contract. The SAC
 rejects a *negative* amount, so two shapes reached it that mint the frozen canonical
 `tipped` event while moving no USDC:
@@ -88,7 +88,7 @@ itself, or send zero-value tips to anyone, and the metric would read it as tract
 
 **Fix.** `validate_tip` runs before the SAC call and before the event: `amount <= 0`
 reverts with `InvalidAmount` (#8, which already existed), and `from == to` reverts with a
-new `SelfTip` (#20). `SelfTip` is numbered at 20, outside the SAC's own 1–13 error range,
+new `SelfTip` (#20). `SelfTip` is numbered at 20, outside the SAC's own 1-13 error range,
 so a code can never be read as the token contract's own error — the collision that
 `humanizeError` already works around for insufficient balance. An emitted `tipped` now
 always means USDC moved from `from` to a different `to`. The web app runs the same two
@@ -112,12 +112,10 @@ when the transaction is flooded, and permanently in ledger history if the claim 
 fails. Anyone watching can submit `claim_vouch(own_address, id, secret)` first and take the
 vouch edge and its claimer XP; the intended recipient sees "already claimed".
 
-**Fix.** New cards are bound to the claimer with a signature, the pattern `quest_registry`
-already uses for attester awards. The share link carries a 32-byte ed25519 seed generated in
-the voucher's browser; `mint_vouch_signed` stores its public key. To claim, the recipient's
-browser signs `xdr([domain tag, network id, contract, vouch id, claimer])` with the seed and
-calls `claim_vouch_signed(claimer, vouch_id, sig)`, which requires `claimer.require_auth()`
-and verifies the signature with `ed25519_verify` against the stored key. The seed never
+**Fix.** New cards are bound to the claimer with a signature, the pattern `quest_registry`lready uses for attester awards. The share link carries a 32-byte ed25519 seed generated in
+the voucher's browser; `mint_vouch_signed` stores its public key. To claim, the
+recipient's browser signs `xdr([domain tag, network id, contract, vouch id, claimer])` with
+the seed and calls `claim_vouch_signed(claimer, vouch_id, sig)`, which requires `claimer.require_auth()`and verifies the signature with `ed25519_verify` against the stored key. The seed never
 leaves the browser and never reaches a server (it lives in the URL fragment). A signature
 copied from a pending claim is useless for any other claimer, card, contract deployment or
 network, and the claimer's own auth is still required for the one it names. The exact
