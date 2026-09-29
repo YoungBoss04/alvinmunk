@@ -225,13 +225,19 @@ fn frozen_account_cannot_claim() {
 }
 
 #[test]
-#[should_panic]
 fn frozen_account_cannot_tip() {
     let f = setup();
     let user = Address::generate(&f.env);
     let other = Address::generate(&f.env);
+    // Fund the sender so the freeze is the only thing that can fail: an unfunded
+    // wallet would panic inside the SAC transfer regardless of the freeze check.
+    token::StellarAssetClient::new(&f.env, &f.usdc).mint(&user, &100);
     f.rewards.set_frozen(&user, &true);
-    f.rewards.tip(&user, &other, &10i128); // panics: Frozen
+    assert_eq!(
+        f.rewards.try_tip(&user, &other, &10),
+        Err(Ok(contract_err(Error::Frozen)))
+    );
+    assert_eq!(token::TokenClient::new(&f.env, &f.usdc).balance(&user), 100);
 }
 
 #[test]

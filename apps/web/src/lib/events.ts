@@ -49,6 +49,10 @@ export interface RepEvent {
   topics: unknown[];
   data: unknown;
   ledger: number;
+  /** The RPC's event id (unique per event), when it reported one. */
+  id?: string;
+  /** Ledger close time in unix seconds, when the RPC reported it. */
+  closedAt?: number;
 }
 
 /**
@@ -105,6 +109,19 @@ export async function fetchTipEvents(options?: WindowReadOptions): Promise<RepEv
 }
 
 /**
+ * Every quest-registry event in the window with two topics — `('quest', created | awarded |
+ * att_bind | att_clear)` and `('streak', player)` — decoded, oldest-first, sharing the
+ * window cache like the reads above. Returns [] if the contract isn't deployed or RPC is
+ * unavailable.
+ */
+export async function fetchQuestEvents(options?: WindowReadOptions): Promise<RepEvent[]> {
+  return fetchContractEvents(config.contracts.questRegistry, ['*', '*'], PAGE_SIZE * MAX_PAGES, {
+    maxAgeMs: EVENT_WINDOW_TTL_MS,
+    ...options,
+  });
+}
+
+/**
  * `tipped` events SENT by `from` (topics ('tipped', from, to) · data amount), oldest-first.
  * RPC topic filters only match events with exactly as many topics as segments, so the
  * 2-segment wildcard above never sees these 3-topic events; filtering on the sender here
@@ -137,9 +154,10 @@ export function clearEventCache(): void {
 /**
  * One scan per window however callers ask for it: callers that degrade and callers that
  * `throwOnError` share the same (throwing) scan, and only a successful one is kept — a
- * failed read must not blank every reader for the TTL.
+ * failed read must not blank every reader for the TTL. The wrappers above are the usual
+ * way in; it is exported for a contract/topic window they don't cover (#279).
  */
-function fetchContractEvents(
+export function fetchContractEvents(
   contractId: string,
   topics: string[],
   limit: number,
@@ -194,10 +212,13 @@ async function scanContractEvents(
       cursor ? { filters, cursor, limit: pageLimit } : { filters, startLedger, limit: pageLimit },
     );
     for (const ev of res.events) {
+      const closedAt = Math.floor(Date.parse(ev.ledgerClosedAt) / 1000);
       out.push({
         topics: (ev.topic as Array<xdr.ScVal | string>).map(decodeScVal),
         data: decodeScVal(ev.value as xdr.ScVal | string),
         ledger: ev.ledger,
+        ...(ev.id ? { id: ev.id } : {}),
+        ...(Number.isFinite(closedAt) ? { closedAt } : {}),
       });
     }
     // Caught up — or a full page without a cursor, which must not restart from startLedger.
