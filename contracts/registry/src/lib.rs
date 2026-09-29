@@ -1,29 +1,28 @@
-#{!no_std]
+#![no_std]
 //! Registry — on-chain username/handle ↔ address mapping for Stellar Passport.
-///
-/// Identity is its own primitive (decoupled from `reputation`, which other apps read
-/// separately). Permissionless first-come `claim`, reverse lookup, rename, release, and a
-/// two-signature `transfer_handle` that moves a handle to another wallet.
-/// Handles are normalized/validated OFF-CHAIN (lowercase, `[a-z0-9_]`, 3‰20 chars); the
-/// contract only enforces UNIQUENESS. A `Symbol` is the cheap interned key for a handle.
-///
-/// Why on-chain: it turns `/u/<handle>` into a public, shareable profile for ANY wallet
-/// (the off-chain/local handle could only resolve for the logged-in user) — the
-/// multiplier on every shared link.
-///
-/// A handle holder can also publish a profile face and a short bio (`set_meta`), keyed by
-/// ADDRESS, so a freed handle never carries its previous owner's profile to the next one.
-/// `transfer_handle`, which both wallets sign, moves the profile along with the handle.
-///
-/// A released or renamed-away handle cools down for `HANDLE_COOLDOWN_SECS` before anyone
-/// else may claim it (its previous owner can take it back at any time), so the tips,
-/// invites and profile visits still aimed at an old `@handle` can't be captured by
-/// whoever grabs it next. A transferred handle is never free, so it never cools down.
+//!
+//! Identity is its own primitive (decoupled from `reputation`, which other apps read
+//! separately). Permissionless first-come `claim`, reverse lookup, rename, release, and a
+//! two-signature `transfer_handle` that moves a handle to another wallet.
+//! Handles are normalized/validated OFF-CHAIN (lowercase, `[a-z0-9_]`, 3–20 chars); the
+//! contract only enforces UNIQUENESS. A `Symbol` is the cheap interned key for a handle.
+//!
+//! Why on-chain: it turns `/u/<handle>` into a public, shareable profile for ANY wallet
+//! (the off-chain/local handle could only resolve for the logged-in user) — the
+//! multiplier on every shared link.
+//!
+//! A handle holder can also publish a profile face and a short bio (`set_meta`), keyed by
+//! ADDRESS, so a freed handle never carries its previous owner's profile to the next one.
+//! `transfer_handle`, which both wallets sign, moves the profile along with the handle.
+//!
+//! A released or renamed-away handle cools down for `HANDLE_COOLDOWN_SECS` before anyone
+//! else may claim it (its previous owner can take it back at any time), so the tips,
+//! invites and profile visits still aimed at an old `@handle` can't be captured by
+//! whoever grabs it next. A transferred handle is never free, so it never cools down.
 
-use soroban_sdk;
+use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, panic_with_error, symbol_short, Address,
     BytesN, Env, String, Symbol, Vec,
-
 };
 
 // TTLs in ledgers (5s). `extend_ttl(key, threshold, extend_to)` does nothing unless the
@@ -39,7 +38,6 @@ const BUMP_THRESHOLD: u32 = BUMP_EXTEND - DAY_LEDGERS;
 /// How long a freed handle stays reserved for its previous owner, in ledger time
 /// (`env.ledger().timestamp()`, seconds) — the only clock the cooldown is checked against.
 const HANDLE_COOLDOWN_SECS: u64 = 30 * 86_400; // 30 days
-
 /// Lifetime of a `Cooldown` entry (temporary storage, so it deletes itself): twice the
 /// window at 5s ledgers, so it outlives `until` even if ledgers close faster. Not BUMP_*:
 /// a temporary entry extended past max_entry_ttl traps instead of clamping.
@@ -50,7 +48,6 @@ const COOLDOWN_TTL_LEDGERS: u32 = 60 * DAY_LEDGERS; // ~60 days
 #[repr(u32)]
 pub enum Error {
     NotInitialized = 1,
-    AlreadyInitialized = 2,
     HandleTaken = 3,
     NoHandle = 4,
     BioTooLong = 5,
@@ -61,9 +58,9 @@ pub enum Error {
     AlreadyHasHandle = 10,
 }
 
-/// Bio limit in UTF-8 BYTES ((what `String::len` counts), not characters: 80 ASCII
+/// Bio limit in UTF-8 BYTES (what `String::len` counts), not characters: 80 ASCII
 /// characters, fewer when they are multi-byte.
-const PIO_MAX_BYTES: u32 = 80;
+const BIO_MAX_BYTES: u32 = 80;
 
 /// Most addresses `reverse_many` takes in one call. Each is one persistent read, so a call's
 /// footprint is up to this many `Rev` keys plus the instance and code: far inside the
@@ -73,7 +70,7 @@ const PIO_MAX_BYTES: u32 = 80;
 const REVERSE_MANY_CAP: u32 = 50;
 
 // Avatar packing — one byte per field, so the u64 reads as hex. Mirrors `encodeAvatar` in
-// apps/web/src/lib/avatar.ts; the counts are the portrait assets the app ships (`FACE_IDs`,
+// apps/web/src/lib/avatar.ts; the counts are the portrait assets the app ships (`FACE_IDS`,
 // `KIT_COUNTS`) and must move with them. Every other byte is zero.
 //   byte 7: kind — 0 = face, 1 = kit
 //   face:   byte 0 = face number, 1..=FACE_COUNT
@@ -130,7 +127,7 @@ impl RegistryContract {
         env.storage().instance().set(&DataKey::Admin, &admin);
     }
 
-    /// Admin-gated WASM upgrade — same contract instance + storage, new code. Lets
+    /// Admin-gated WASM upgrade — same contract instance + storage, new code. Lets us
     /// iterate/season without a new address or state migration (mainnet de-risk).
     pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
         Self::admin(&env).require_auth();
@@ -138,8 +135,8 @@ impl RegistryContract {
     }
 
     /// Claim `handle` for `caller` (first-come). If `caller` already holds a different
-    /// handle, this RENAMES: the old one is freed into a cooldown and `released` is published
-    /// for it before `claimed`. Reverts with `HandleTaken` if the handle is held
+    /// handle, this RENAMES: the old one is freed into a cooldown and `released` is
+    /// published for it before `claimed`. Reverts with `HandleTaken` if the handle is held
     /// by someone else, and with `HandleCoolingDown` if someone else freed it less than
     /// `HANDLE_COOLDOWN_SECS` ago (its previous owner may reclaim it at any time).
     /// Re-claiming the handle `caller` already holds is a no-op (no writes, no event; TTLs
@@ -150,7 +147,7 @@ impl RegistryContract {
         let fkey = DataKey::Fwd(handle.clone());
         if let Some(owner) = env.storage().persistent().get::<DataKey, Address>(&fkey) {
             if owner != caller {
-                panic_with_error(&env, Error::HandleTaken);
+                panic_with_error!(&env, Error::HandleTaken);
             }
         }
 
@@ -161,13 +158,13 @@ impl RegistryContract {
             .get::<DataKey, CooldownInfo>(&ckey)
         {
             if cd.prev_owner != caller && env.ledger().timestamp() < cd.until {
-                panic_with_error(&env, Error::HandleCoolingDown);
+                panic_with_error!(&env, Error::HandleCoolingDown);
             }
             // taken back by its previous owner, or the window has passed
             env.storage().temporary().remove(&ckey);
         }
 
-        let key = DataKey::Rev(caller.clone());
+        let rkey = DataKey::Rev(caller.clone());
         if let Some(old) = env.storage().persistent().get::<DataKey, Symbol>(&rkey) {
             if old == handle {
                 // already held: nothing changed, so nothing to write or announce
@@ -213,7 +210,7 @@ impl RegistryContract {
     /// any caller, no TTL bumps; reverts with `TooMany` past `REVERSE_MANY_CAP` addresses.
     pub fn reverse_many(env: Env, addrs: Vec<Address>) -> Vec<Option<Symbol>> {
         if addrs.len() > REVERSE_MANY_CAP {
-            panic_with_error(&env, Error::TooMany);
+            panic_with_error!(&env, Error::TooMany);
         }
         let mut out = Vec::new(&env);
         for addr in addrs.iter() {
@@ -239,7 +236,7 @@ impl RegistryContract {
             .storage()
             .persistent()
             .get(&rkey)
-            .unwrap_or_else(|| panic_with_error(&env, Error::NoHandle));
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NoHandle));
         env.storage()
             .persistent()
             .remove(&DataKey::Fwd(handle.clone()));
@@ -259,4 +256,203 @@ impl RegistryContract {
     /// Reverts with `NoHandle` if `from` holds none and `AlreadyHasHandle` if `to` already
     /// holds one (`to == from` included), keeping one handle per address.
     ///
-    /// The handle is never free in between, so this is not a release: it starts n
+    /// The handle is never free in between, so this is not a release: it starts no cooldown
+    /// and publishes only `handle/moved`, never `released` or `claimed`. A held handle has no
+    /// cooldown entry (`claim` removes it), so there is none to carry over either. The
+    /// profile meta moves with the handle (the same person on a new wallet keeps their face
+    /// and bio), announced as `meta/cleared` for `from` then `meta/set` for `to`, so an
+    /// address-keyed indexer needs no new rule. Nothing else moves: state other contracts key
+    /// by address (Social and Earned XP in `reputation`) stays with `from`.
+    pub fn transfer_handle(env: Env, from: Address, to: Address) {
+        from.require_auth();
+
+        let from_rkey = DataKey::Rev(from.clone());
+        let handle: Symbol = env
+            .storage()
+            .persistent()
+            .get(&from_rkey)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NoHandle));
+        let to_rkey = DataKey::Rev(to.clone());
+        if env.storage().persistent().has(&to_rkey) {
+            panic_with_error!(&env, Error::AlreadyHasHandle);
+        }
+        // after the checks, so a self-transfer reverts with `AlreadyHasHandle` rather than
+        // asking the same address to authorize twice
+        to.require_auth();
+
+        let fkey = DataKey::Fwd(handle.clone());
+        env.storage().persistent().set(&fkey, &to);
+        env.storage().persistent().remove(&from_rkey);
+        env.storage().persistent().set(&to_rkey, &handle);
+        Self::bump(&env, &fkey);
+        Self::bump(&env, &to_rkey);
+        env.events().publish(
+            (symbol_short!("handle"), symbol_short!("moved")),
+            (from.clone(), to.clone(), handle),
+        );
+
+        let from_mkey = DataKey::Meta(from.clone());
+        if let Some(meta) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, ProfileMeta>(&from_mkey)
+        {
+            Self::clear_meta(&env, from);
+            let to_mkey = DataKey::Meta(to.clone());
+            env.storage().persistent().set(&to_mkey, &meta);
+            Self::bump(&env, &to_mkey);
+            env.events().publish(
+                (symbol_short!("meta"), symbol_short!("set")),
+                (to, meta.avatar, meta.bio),
+            );
+        }
+    }
+
+    /// Admin force-release a handle (squatting / abuse), dropping the holder's profile
+    /// meta with it. Abuse removal frees the handle outright: it starts no cooldown and
+    /// ends any the handle is already in. Admin-gated.
+    pub fn admin_release(env: Env, handle: Symbol) {
+        Self::admin(&env).require_auth();
+        let fkey = DataKey::Fwd(handle.clone());
+        if let Some(owner) = env.storage().persistent().get::<DataKey, Address>(&fkey) {
+            env.storage()
+                .persistent()
+                .remove(&DataKey::Rev(owner.clone()));
+            env.storage().persistent().remove(&fkey);
+            Self::clear_meta(&env, owner);
+        }
+        env.storage().temporary().remove(&DataKey::Cooldown(handle));
+    }
+
+    /// Publish `caller`'s profile face and bio, replacing any earlier ones. `caller` must
+    /// hold a handle. Reverts with `BadAvatar` unless `avatar` is a valid packing (layout
+    /// above), `BioTooLong` past `BIO_MAX_BYTES` bytes, and `BadBio` unless `bio` is UTF-8
+    /// without control characters (so it renders as one plain line). An empty bio is fine.
+    /// Refreshes the handle's TTLs too, so a profile and its handle age together.
+    pub fn set_meta(env: Env, caller: Address, avatar: u64, bio: String) {
+        caller.require_auth();
+
+        let rkey = DataKey::Rev(caller.clone());
+        let handle: Symbol = env
+            .storage()
+            .persistent()
+            .get(&rkey)
+            .unwrap_or_else(|| panic_with_error!(&env, Error::NoHandle));
+        if !avatar_ok(avatar) {
+            panic_with_error!(&env, Error::BadAvatar);
+        }
+        check_bio(&env, &bio);
+
+        let mkey = DataKey::Meta(caller.clone());
+        env.storage().persistent().set(
+            &mkey,
+            &ProfileMeta {
+                avatar,
+                bio: bio.clone(),
+            },
+        );
+        Self::bump(&env, &mkey);
+        Self::bump(&env, &rkey);
+        Self::bump(&env, &DataKey::Fwd(handle));
+
+        env.events().publish(
+            (symbol_short!("meta"), symbol_short!("set")),
+            (caller, avatar, bio),
+        );
+    }
+
+    /// address -> published profile, `None` if it never set one or no longer holds a
+    /// handle (pure read, any caller).
+    pub fn get_meta(env: Env, addr: Address) -> Option<ProfileMeta> {
+        env.storage().persistent().get(&DataKey::Meta(addr))
+    }
+
+    // --- internal ---
+
+    fn admin(env: &Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .unwrap_or_else(|| panic_with_error!(env, Error::NotInitialized))
+    }
+
+    fn bump(env: &Env, key: &DataKey) {
+        env.storage()
+            .persistent()
+            .extend_ttl(key, BUMP_THRESHOLD, BUMP_EXTEND);
+    }
+
+    /// Reserve the just-freed `handle` for `prev_owner` for `HANDLE_COOLDOWN_SECS` of ledger
+    /// time; returns `until`, the timestamp from which anyone may claim it.
+    fn start_cooldown(env: &Env, prev_owner: &Address, handle: &Symbol) -> u64 {
+        let until = env
+            .ledger()
+            .timestamp()
+            .saturating_add(HANDLE_COOLDOWN_SECS);
+        let ckey = DataKey::Cooldown(handle.clone());
+        env.storage().temporary().set(
+            &ckey,
+            &CooldownInfo {
+                prev_owner: prev_owner.clone(),
+                until,
+            },
+        );
+        env.storage()
+            .temporary()
+            .extend_ttl(&ckey, COOLDOWN_TTL_LEDGERS, COOLDOWN_TTL_LEDGERS);
+        until
+    }
+
+    /// Drop `addr`'s profile when it gives up its handle, announcing it if there was one.
+    fn clear_meta(env: &Env, addr: Address) {
+        let mkey = DataKey::Meta(addr.clone());
+        if env.storage().persistent().has(&mkey) {
+            env.storage().persistent().remove(&mkey);
+            env.events()
+                .publish((symbol_short!("meta"), symbol_short!("cleared")), addr);
+        }
+    }
+}
+
+/// Is `v` a face or kit packing whose indexes are all in range (layout above)?
+fn avatar_ok(v: u64) -> bool {
+    let byte = |i: u32| (v >> (8 * i)) & 0xff;
+    match v >> 56 {
+        AVATAR_FACE => v >> 8 == 0 && (1..=FACE_COUNT).contains(&byte(0)),
+        AVATAR_KIT => {
+            byte(6) == 0
+                && (1..=KIT_SKIN).contains(&byte(5))
+                && (1..=KIT_HAIR).contains(&byte(4))
+                && (1..=KIT_EYES).contains(&byte(3))
+                && (1..=KIT_MOUTH).contains(&byte(2))
+                && byte(1) <= KIT_ACC
+                && byte(0) <= KIT_BG
+        }
+        _ => false,
+    }
+}
+
+/// Revert unless `bio` fits `BIO_MAX_BYTES` and is one line of plain UTF-8 text: no
+/// control characters (C0, DEL, C1), line/paragraph separators, or bidi embedding,
+/// override and isolate marks (which can reorder the text displayed around a bio).
+fn check_bio(env: &Env, bio: &String) {
+    let len = bio.len();
+    if len > BIO_MAX_BYTES {
+        panic_with_error!(env, Error::BioTooLong);
+    }
+    let mut buf = [0u8; BIO_MAX_BYTES as usize];
+    let bytes = &mut buf[..len as usize];
+    bio.copy_into_slice(bytes);
+    let text =
+        core::str::from_utf8(bytes).unwrap_or_else(|_| panic_with_error!(env, Error::BadBio));
+    let banned = |c: char| {
+        c.is_control()
+            || matches!(c, '\u{2028}' | '\u{2029}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+    };
+    if text.chars().any(banned) {
+        panic_with_error!(env, Error::BadBio);
+    }
+}
+
+#[cfg(test)]
+mod test;

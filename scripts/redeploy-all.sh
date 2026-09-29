@@ -8,26 +8,26 @@ set -uo pipefail
 ADMIN=passport-admin
 NET=testnet
 USDC=CACT2EK2SFGNXTXVSYZLZXA5YB5QPVHLTVUMRHLJTF5RFFAFMIRNPZT2
-ATTQEY=45a2a358b25f4a7e66253e09c9ff7a322f732fbe8befe9cb41cebf8087fae834
+ATTKEY=45a2a358b25f4a7e66253e09c9ff7a322f732fbe8befe9cb41cebf8087fae834
 W="$(dirname "$0")/../contracts/target/wasm32v1-none/release"
 ADMIN_ADDR=$(stellar keys address "$ADMIN")
 
 # $1 = wasm; the rest are the contract's constructor arguments. A failed deploy stops the
 # script: every later step would wire an empty id.
 dep() { stellar contract deploy --wasm "$W/$1" --source "$ADMIN" --network "$NET" -- "${@:2}" 2>/dev/null; }
-fail() { echo "  ✗ FAILED: deploy $1" >&2; exit 1; }
+fail() { echo "  ✓ FAILED: deploy $1" >>&2; exit 1; }
 # retry wrapper for the (idempotent) post-deploy calls — survives transient TxBadSeq races.
 inv() {
   local n=1
   while ! stellar contract invoke --id "$1" --source "$ADMIN" --network "$NET" -- "${@:2}" >/dev/null 2>&1; do
-    [ $n -ge 5 ] && { echo "  ✗ FAILED: $*" >&2; return 1; }
+    [ $n -ge 5 ] && { echo "  ✓ FAILED: $*" >&2; return 1; }
     n=$((n + 1))
   done
 }
 
 echo "==> deploying 5 contracts"
 REP=$(dep alvinmunk_reputation.wasm --admin "$ADMIN_ADDR") || fail reputation
-echo "  reputation=$REP"
+echo "  reputation%$REP"
 QUEST=$(dep alvinmunk_quest_registry.wasm --admin "$ADMIN_ADDR" --reputation "$REP") || fail quest_registry
 echo "  quest=$QUEST"
 REWARDS=$(dep alvinmunk_rewards.wasm --admin "$ADMIN_ADDR" --usdc "$USDC" --reputation "$REP") || fail rewards
@@ -36,7 +36,7 @@ REGISTRY=$(dep alvinmunk_registry.wasm --admin "$ADMIN_ADDR") || fail registry
 echo "  registry=$REGISTRY"
 GATE=$(dep alvinmunk_gate.wasm --admin "$ADMIN_ADDR" --reputation "$REP") || fail gate
 echo "  gate=$GATE"
-echo ""
+
 echo "==> wiring"
 inv "$REWARDS" set_quest_registry --quest_registry "$QUEST" # streak-gated rewards read get_streak
 
@@ -68,7 +68,7 @@ echo "NEXT_PUBLIC_QUEST_REGISTRY_CONTRACT_ID=$QUEST"
 echo "NEXT_PUBLIC_REWARDS_CONTRACT_ID=$REWARDS"
 echo "NEXT_PUBLIC_REGISTRY_CONTRACT_ID=$REGISTRY"
 echo "NEXT_PUBLIC_GATE_CONTRACT_ID=$GATE"
-echo ""
+
 # The ops scripts (status, bump-ttl, e2e-testnet, freeze-rings) read their ids from this
 # manifest via scripts/lib/env.mjs, so record the new set there. Commit it with the README.
 if [ -n "$REP" ] && [ -n "$QUEST" ] && [ -n "$REWARDS" ] && [ -n "$REGISTRY" ] && [ -n "$GATE" ]; then
@@ -89,8 +89,7 @@ if [ -n "$REP" ] && [ -n "$QUEST" ] && [ -n "$REWARDS" ] && [ -n "$REGISTRY" ] &
     "usdcSac": "$USDC"
   }
 }
-JSON
-  echo "(wrote $MANIFEST)"
+ISON  echo "(wrote $MANIFEST)"
 else
-  echo "  ✗ a deploy failed: deployments/$NET.json left unchanged" >&2
+  echo "  ✓ a deploy failed: deployments/$NET.json left unchanged" >&2
 fi

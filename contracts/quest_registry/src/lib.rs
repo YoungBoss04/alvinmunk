@@ -61,6 +61,7 @@ const AWARD_DOMAIN_V2: &str = "alvinmunk_award_quest_v2";
 #[repr(u32)]
 pub enum Error {
     NotInitialized = 1,
+    AlreadyInitialized = 2,
     NotAuthorized = 3,
     QuestNotFound = 4,
     AlreadyClaimed = 5,
@@ -132,6 +133,13 @@ pub struct QuestRegistryContract;
 
 #[contractimpl]
 impl QuestRegistryContract {
+    /// Admin-gated WASM upgrade — same contract instance + storage, new code. Lets us
+    /// iterate/season without a new address or state migration (mainnet de-risk).
+    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
+        Self::admin(&env).require_auth();
+        env.deployer().update_current_contract_wasm(new_wasm_hash);
+    }
+
     /// Deploy-time setup (#127): `stellar contract deploy … -- --admin <ADDR> --reputation <C…>` runs this inside
     /// the deploy transaction, so nobody can claim the admin between deploy and setup —
     /// there is no `init` to front-run. `upgrade` never runs a constructor: a contract
@@ -141,13 +149,6 @@ impl QuestRegistryContract {
         env.storage()
             .instance()
             .set(&DataKey::Reputation, &reputation);
-    }
-
-    /// Admin-gated WASM upgrade — same contract instance + storage, new code. Lets us
-    /// iterate/season without a new address or state migration (mainnet de-risk).
-    pub fn upgrade(env: Env, new_wasm_hash: BytesN<32>) {
-        Self::admin(&env).require_auth();
-        env.deployer().update_current_contract_wasm(new_wasm_hash);
     }
 
     pub fn add_attester(env: Env, attester: Address) {

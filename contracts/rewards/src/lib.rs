@@ -35,7 +35,6 @@ const DAY_SECS: u64 = 86_400;
 #[repr(u32)]
 pub enum Error {
     NotInitialized = 1,
-    AlreadyInitialized = 2,
     BelowThreshold = 3,
     AlreadyClaimed = 4,
     Paused = 5,
@@ -269,8 +268,9 @@ impl RewardsContract {
 
     /// Point the rewards contract at the QuestRegistry whose `get_streak` gates
     /// streak-gated rewards. Admin-only. The constructor doesn't take it (it keeps the
-    /// arguments the deploy scripts wire every contract with), so a deploy or upgrade
-    /// calls this once; it can be re-pointed after a QuestRegistry redeploy.
+    /// arguments the old `init` had, so the deploy scripts wire every contract the same
+    /// way), so a deploy or upgrade calls this once; it can be re-pointed after a
+    /// QuestRegistry redeploy.
     pub fn set_quest_registry(env: Env, quest_registry: Address) {
         Self::admin(&env).require_auth();
         env.storage()
