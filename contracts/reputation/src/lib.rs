@@ -66,7 +66,6 @@ const CLAIM_DOMAIN: &str = "alvinmunk_vouch_claim";
 #[repr(u32)]
 pub enum Error {
     NotInitialized = 1,
-    AlreadyInitialized = 2,
     NotAuthorized = 3,
     VouchNotFound = 4,
     AlreadyClaimed = 5,

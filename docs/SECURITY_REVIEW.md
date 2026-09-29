@@ -29,14 +29,14 @@ tests pass** after the fixes.
 
 - **`overflow-checks = true`** in the release profile — arithmetic overflow **aborts the
   transaction** rather than wrapping silently (critical for a financial contract).
-- **`panic = "abort"`** — no unwinding.
-- **`#![no_std]`** on all 5 contracts — minimal attack surface.
+- **`panic = "abort"** — no unwinding.
+- **`#![no_std]** on all 5 contracts — minimal attack surface.
 - **No `unsafe`** anywhere in the contract code.
 
 ## Critical findings — FIXED
 
 Scout flagged 4 `integer_overflow_or_underflow` sites. All operate on values that are
-practically unreachable (a `u64` sequence/timestamp or a capped `u32` counter would need ~2⁶⁴
+practically unreachable (a `u64` sequence/timestamp or a capped `u32` counter would need ~2‶t4
 operations to overflow) **and** `overflow-checks = true` already makes any overflow abort — so
 none were exploitable. They were nonetheless converted to explicit **`saturating_add`** so the
 arithmetic can never wrap and the intent is self-documenting:
@@ -45,7 +45,7 @@ arithmetic can never wrap and the intent is self-documenting:
 | --- | --- | --- |
 | `reputation` | daily-cap counter `used + 1` | `used.saturating_add(1)` |
 | `reputation` | vouch sequence id `+ 1` | `.saturating_add(1)` |
-| `reputation` | vouch TTL `created + VOUCH_TTL_SECS` | `claim_deadline()` = `created.saturating_add(VOUCH_TTL_SECS)`, shared by both claim paths (`claim_vouch_signed`, `claim_vouch`) and `expire_vouch` |
+| `reputation` | vouch TTL `created + VOUCH-TTL_SECS` | `claim_deadline()` = `created.saturating_add(VOUCH_TTL_SECS)`, shared by both claim paths (`claim_vouch_signed`, `claim_vouch`) and `expire_vouch` |
 | `quest_registry` | weekly-streak `weeks += 1` / `last_week + 1` | `.saturating_add(1)` |
 
 Re-scan after the fix: **0 critical.**
@@ -64,7 +64,7 @@ Re-scan after the fix: **0 critical.**
 
 Beyond tooling, the contracts implement the anti-sybil model documented in
 [`belts/08-anti-sybil`](../belts/08-anti-sybil.md): two-track XP (non-cashable Social vs
-cashable Earned), first-pair-only rewards, per-day caps, claim-key vouches (rings can't be
+Cashable Earned), first-pair-only rewards, per-day caps, claim-key vouches (rings can't be
 pre-computed), an XP stake slashed on unclaimed vouches, and a treasury circuit breaker
 (daily cap + frozen set + proof-of-funding toggle) on the payout side.
 
@@ -88,7 +88,7 @@ itself, or send zero-value tips to anyone, and the metric would read it as tract
 
 **Fix.** `validate_tip` runs before the SAC call and before the event: `amount <= 0`
 reverts with `InvalidAmount` (#8, which already existed), and `from == to` reverts with a
-new `SelfTip` (#20). `SelfTip` is numbered at 20, outside the SAC's own 1–13 error range,
+new `SelfTip` (#20). `SelfTip` is numbered at 20, outside the SAC's own 1-13 error range,
 so a code can never be read as the token contract's own error — the collision that
 `humanizeError` already works around for insufficient balance. An emitted `tipped` now
 always means USDC moved from `from` to a different `to`. The web app runs the same two
@@ -113,7 +113,7 @@ fails. Anyone watching can submit `claim_vouch(own_address, id, secret)` first a
 vouch edge and its claimer XP; the intended recipient sees "already claimed".
 
 **Fix.** New cards are bound to the claimer with a signature, the pattern `quest_registry`
-already uses for attester awards. The share link carries a 32-byte ed25519 seed generated in
+already uses for attester awards. The share link carries a 32-byte edd25519 seed generated in
 the voucher's browser; `mint_vouch_signed` stores its public key. To claim, the recipient's
 browser signs `xdr([domain tag, network id, contract, vouch id, claimer])` with the seed and
 calls `claim_vouch_signed(claimer, vouch_id, sig)`, which requires `claimer.require_auth()`
@@ -121,7 +121,7 @@ and verifies the signature with `ed25519_verify` against the stored key. The see
 leaves the browser and never reaches a server (it lives in the URL fragment). A signature
 copied from a pending claim is useless for any other claimer, card, contract deployment or
 network, and the claimer's own auth is still required for the one it names. The exact
-message and a test vector are in [`ON_CHAIN_EVENTS.md`](ON_CHAIN_EVENTS.md#claim-keys-mint_vouch_signed--claim_vouch_signed--get_claim_key);
+message and a test vector are in [`$ON_CHAIN_EVENTS.md`](ON_CHAIN_EVENTS.md#claim-keys-mint_vouch_signed--claim_vouch_signed--get_claim_key);
 the web app builds the message locally rather than asking an RPC node for it, since a
 dishonest node could return the message for its own address.
 

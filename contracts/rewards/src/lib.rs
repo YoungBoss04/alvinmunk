@@ -54,6 +54,8 @@ pub enum Error {
     StreakTooShort = 18, // live weekly quest streak below the reward's minimum
     QuestRegistryNotSet = 19, // a streak gate needs `set_quest_registry` first
     SelfTip = 20,   // `tip` sender == receiver: a `tipped` event that moves no value
+    // New errors use 100+ to avoid the SAC's 1-13 error range. Keep legacy codes stable.
+    TreasuryInsufficient = 100,
 }
 
 /// `quest_registry::Streak`, decoded from the cross-contract `get_streak` read (the field
@@ -267,9 +269,8 @@ impl RewardsContract {
 
     /// Point the rewards contract at the QuestRegistry whose `get_streak` gates
     /// streak-gated rewards. Admin-only. The constructor doesn't take it (it keeps the
-    /// arguments the old `init` had, so the deploy scripts wire every contract the same
-    /// way), so a deploy or upgrade calls this once; it can be re-pointed after a
-    /// QuestRegistry redeploy.
+    /// arguments the deploy scripts wire every contract with), so a deploy or upgrade
+    /// calls this once; it can be re-pointed after a QuestRegistry redeploy.
     pub fn set_quest_registry(env: Env, quest_registry: Address) {
         Self::admin(&env).require_auth();
         env.storage()
@@ -379,6 +380,7 @@ impl RewardsContract {
 
         let mut score: Option<u64> = None;
         let mut weeks: Option<u32> = None;
+        let mut treasury: Option<i128> = None;
         let mut out = Vec::new(&env);
         for entry in Self::get_rewards(env.clone()).iter() {
             let claimed = Self::is_claimed(env.clone(), entry.id, who.clone());
@@ -394,8 +396,13 @@ impl RewardsContract {
                 Some(Error::BelowThreshold)
             } else if let Some(e) = Self::streak_block(&env, &who, entry.min_streak, &mut weeks) {
                 Some(e)
+            } else if let Some(e) = Self::daily_block(cap, paid, entry.amount) {
+                Some(e)
+            } else if *treasury.get_or_insert_with(|| Self::treasury_balance(&env)) < entry.amount {
+                // Same last check as `claim_reward`: the treasury can't cover this payout.
+                Some(Error::TreasuryInsufficient)
             } else {
-                Self::daily_block(cap, paid, entry.amount)
+                None
             };
             out.push_back(RewardStatus {
                 entry,
@@ -469,9 +476,16 @@ impl RewardsContract {
             .unwrap_or_else(|| panic_with_error!(&env, Error::Overflow));
         Self::save_stats(&env, reward_id, &stats);
 
+        // An underfunded treasury gets its own error, not the SAC's balance error (#147).
+        if Self::treasury_balance(&env) < entry.amount {
+            panic_with_error!(&env, Error::TreasuryInsufficient);
+        }
         let usdc: Address = env.storage().instance().get(&DataKey::Usdc).unwrap();
-        let treasury = env.current_contract_address();
-        token::Client::new(&env, &usdc).transfer(&treasury, &to, &entry.amount);
+        token::Client::new(&env, &usdc).transfer(
+            &env.current_contract_address(),
+            &to,
+            &entry.amount,
+        );
 
         // The running claim count lets an indexer show "N of M claimed" without aggregating.
         env.events().publish(
@@ -585,6 +599,12 @@ impl RewardsContract {
     }
 
     // --- internal ---
+
+    /// The treasury's USDC balance (this contract's own SAC balance).
+    fn treasury_balance(env: &Env) -> i128 {
+        let usdc: Address = env.storage().instance().get(&DataKey::Usdc).unwrap();
+        token::Client::new(env, &usdc).balance(&env.current_contract_address())
+    }
 
     /// Reject a tip that would move no value, BEFORE the SAC call and before the event
     /// (nothing is written either way — a revert rolls the whole invocation back).

@@ -7,8 +7,8 @@ set -uo pipefail
 
 ADMIN=passport-admin
 NET=testnet
-USDC=CAKT2EK2SFGNXTXVSYZLZXA5YB5QPVHLTVUMRHLJTF5RFFAFMIRNPZT2
-ATTKEY=45a2a358b25f4a7e66253e09c9ff7a322f732fbe8befe9cb41cebf8087fae834
+USDC=CACT2EK2SFGNXTXVSYZLZXA5YB5QPVHLTVUMRHLJTF5RFFAFMIRNPZT2
+ATTQEY=45a2a358b25f4a7e66253e09c9ff7a322f732fbe8befe9cb41cebf8087fae834
 W="$(dirname "$0")/../contracts/target/wasm32v1-none/release"
 ADMIN_ADDR=$(stellar keys address "$ADMIN")
 
@@ -36,7 +36,7 @@ REGISTRY=$(dep alvinmunk_registry.wasm --admin "$ADMIN_ADDR") || fail registry
 echo "  registry=$REGISTRY"
 GATE=$(dep alvinmunk_gate.wasm --admin "$ADMIN_ADDR" --reputation "$REP") || fail gate
 echo "  gate=$GATE"
-
+echo ""
 echo "==> wiring"
 inv "$REWARDS" set_quest_registry --quest_registry "$QUEST" # streak-gated rewards read get_streak
 
@@ -68,7 +68,7 @@ echo "NEXT_PUBLIC_QUEST_REGISTRY_CONTRACT_ID=$QUEST"
 echo "NEXT_PUBLIC_REWARDS_CONTRACT_ID=$REWARDS"
 echo "NEXT_PUBLIC_REGISTRY_CONTRACT_ID=$REGISTRY"
 echo "NEXT_PUBLIC_GATE_CONTRACT_ID=$GATE"
-
+echo ""
 # The ops scripts (status, bump-ttl, e2e-testnet, freeze-rings) read their ids from this
 # manifest via scripts/lib/env.mjs, so record the new set there. Commit it with the README.
 if [ -n "$REP" ] && [ -n "$QUEST" ] && [ -n "$REWARDS" ] && [ -n "$REGISTRY" ] && [ -n "$GATE" ]; then

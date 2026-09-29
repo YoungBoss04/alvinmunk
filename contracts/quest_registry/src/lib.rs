@@ -61,7 +61,6 @@ const AWARD_DOMAIN_V2: &str = "alvinmunk_award_quest_v2";
 #[repr(u32)]
 pub enum Error {
     NotInitialized = 1,
-    AlreadyInitialized = 2,
     NotAuthorized = 3,
     QuestNotFound = 4,
     AlreadyClaimed = 5,

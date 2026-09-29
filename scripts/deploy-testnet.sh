@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Deploy the 3 Passport contracts to testnet and wire them together.
+# Each contract's admin is set by its constructor inside the deploy transaction (#127),
+# so there is no separate post-deploy `init` that a watcher could front-run.
 # Prereq: `stellar` CLI installed, an identity funded on testnet (`stellar keys generate --fund admin --network testnet`).
 # Usage: USDC_SAC=C… ADMIN=admin ATTESTER=attester [NETWORK=testnet|futurenet] ./scripts/deploy-testnet.sh
 set -euo pipefail
