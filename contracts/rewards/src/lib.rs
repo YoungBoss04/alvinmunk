@@ -123,10 +123,9 @@ pub struct RewardsContract;
 
 #[contractimpl]
 impl RewardsContract {
-    pub fn init(env: Env, admin: Address, usdc: Address, reputation: Address) {
-        if env.storage().instance().has(&DataKey::Admin) {
-            panic_with_error!(&env, Error::AlreadyInitialized);
-        }
+    /// Deploy-time constructor: admin + wiring are set in the same atomic transaction
+    /// that deploys the WASM, so there is no window for a watcher to seize admin.
+    pub fn __constructor(env: Env, admin: Address, usdc: Address, reputation: Address) {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Usdc, &usdc);
         env.storage()
@@ -254,8 +253,8 @@ impl RewardsContract {
 
     /// Point the rewards contract at the QuestRegistry whose `get_streak` gates
     /// streak-gated rewards. Admin-only. `init` doesn't take it (deployed contracts keep
-    /// their init signature), so a deploy or upgrade calls this once; it can be re-pointed
-    /// after a QuestRegistry redeploy.
+    /// their constructor signature), so a deploy or upgrade calls this once; it can be
+    /// re-pointed after a QuestRegistry redeploy.
     pub fn set_quest_registry(env: Env, quest_registry: Address) {
         Self::admin(&env).require_auth();
         env.storage()

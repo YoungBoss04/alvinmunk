@@ -19,23 +19,20 @@ echo "==> Building contracts"
 # stellar-cli 25.x builds to the wasm32v1-none target.
 WASM_DIR="$(dirname "$0")/../contracts/target/wasm32v1-none/release"
 
-deploy () { # $1 = wasm filename
-  stellar contract deploy --wasm "$WASM_DIR/$1" --source "$ADMIN" --network "$NETWORK"
+deploy () { # $1 = wasm filename; remaining args passed to the constructor
+  stellar contract deploy --wasm "$WASM_DIR/$1" --source "$ADMIN" --network "$NETWORK" -- "${@:2}"
 }
 
 echo "==> Deploying reputation"
-REP_ID=$(deploy alvinmunk_reputation.wasm)
+REP_ID=$(deploy alvinmunk_reputation.wasm --admin "$ADMIN_ADDR")
 echo "==> Deploying quest_registry"
-QUEST_ID=$(deploy alvinmunk_quest_registry.wasm)
+QUEST_ID=$(deploy alvinmunk_quest_registry.wasm --admin "$ADMIN_ADDR" --reputation "$REP_ID")
 echo "==> Deploying rewards"
-REWARDS_ID=$(deploy alvinmunk_rewards.wasm)
+REWARDS_ID=$(deploy alvinmunk_rewards.wasm --admin "$ADMIN_ADDR" --usdc "$USDC_SAC" --reputation "$REP_ID")
 
 inv () { stellar contract invoke --id "$1" --source "$ADMIN" --network "$NETWORK" -- "${@:2}"; }
 
-echo "==> Initializing"
-inv "$REP_ID" init --admin "$ADMIN_ADDR"
-inv "$QUEST_ID" init --admin "$ADMIN_ADDR" --reputation "$REP_ID"
-inv "$REWARDS_ID" init --admin "$ADMIN_ADDR" --usdc "$USDC_SAC" --reputation "$REP_ID"
+echo "==> Wiring rewards to quest registry"
 inv "$REWARDS_ID" set_quest_registry --quest_registry "$QUEST_ID"
 
 echo "==> Wiring attesters (QuestRegistry contract + off-chain attester key are both attesters of Reputation)"

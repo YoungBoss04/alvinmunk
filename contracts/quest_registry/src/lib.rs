@@ -114,10 +114,7 @@ pub struct QuestRegistryContract;
 
 #[contractimpl]
 impl QuestRegistryContract {
-    pub fn init(env: Env, admin: Address, reputation: Address) {
-        if env.storage().instance().has(&DataKey::Admin) {
-            panic_with_error!(&env, Error::AlreadyInitialized);
-        }
+    pub fn __constructor(env: Env, admin: Address, reputation: Address) {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage()
             .instance()
