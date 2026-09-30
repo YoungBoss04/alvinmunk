@@ -68,14 +68,18 @@ const config: Config = {
         sans: ['var(--font-sans)', 'system-ui', 'sans-serif'],
         mono: ['var(--font-mono)', 'monospace'],
       },
+      // One monotonic scale from --radius, 0.25rem a step. 2xl / 3xl must be set here too:
+      // Tailwind's own (1rem / 1.5rem) would make rounded-2xl squarer than rounded-xl.
       borderRadius: {
         sm: 'calc(var(--radius) - 0.5rem)',
-        md: 'calc(var(--radius) / 2)',
+        md: 'calc(var(--radius) - 0.25rem)',
         lg: 'var(--radius)',
         xl: 'calc(var(--radius) + 0.25rem)',
         '2xl': 'calc(var(--radius) + 0.5rem)',
-        '3xl': 'calc(var(--radius) + 1rem)',
+        '3xl': 'calc(var(--radius) + 0.75rem)',
       },
+      // Every shadow reads a colour token, so the light theme gets a soft slate shadow
+      // (--glass-shadow) instead of the dark theme's near-black. Use these, not shadow-lg / -2xl.
       boxShadow: {
         card: 'inset 0 1px 0 0 hsl(var(--hairline) / 0.06), 0 8px 30px -12px hsl(var(--glass-shadow) / 0.3)',
         popover: '0 12px 32px -16px hsl(var(--glass-shadow) / 0.35)',
@@ -138,7 +142,7 @@ const config: Config = {
         'fade-up': 'fade-up 0.5s cubic-bezier(0.22,1,0.36,1) both',
         breathe: 'breathe 5.2s ease-in-out infinite',
         ignite: 'ignite 0.42s cubic-bezier(0.22,1,0.36,1) both',
-        twinke: 'twinke 4s ease-in-out infinite',
+        twinkle: 'twinkle 4s ease-in-out infinite',
         float: 'float 6s ease-in-out infinite',
         'glow-pulse': 'glow-pulse 6s ease-in-out infinite',
         'gradient-pan': 'gradient-pan 6s ease-in-out infinite',

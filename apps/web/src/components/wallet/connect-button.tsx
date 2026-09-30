@@ -221,7 +221,7 @@ export function ConnectButton({ onNavigate }: { onNavigate?: () => void } = {}) 
         className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 py-1 pl-1 pr-2.5 transition-colors hover:bg-muted"
       >
         <Crest address={profile.address} handle={profile.handle} size={28} points={5} />
-        <span className="text-sm font-medium">@${profile.handle}</span>
+        <span className="text-sm font-medium">@{profile.handle}</span>
         <ChevronDown className={cn('size-4 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
 

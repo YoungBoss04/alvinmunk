@@ -1,1 +1,146 @@
-aW1wb3J0IHsgcmVhZEZpbGVTeW5jIH0gZnJvbSAnbm9kZTpmcyc7CmltcG9ydCB7IGRlc2NyaWJlLCBleHBlY3QsIGl0IH0gZnJvbSAndml0ZXN0JzsKaW1wb3J0IHRhaWx3aW5kQ29uZmlnIGZyb20gJy4uLy4uL3RhaWx3aW5kLmNvbmZpZyc7CmltcG9ydCB7IEJhZGdlIH0gZnJvbSAnQC9jb21wb25lbnRzL3VpL2JhZGdlJzsKaW1wb3J0IHsgYnV0dG9uVmFyaWFudHMgfSBmcm9tICdAL2NvbXBvbmVudHMvdWkvYnV0dG9uJzsKCmNvbnN0IHJlYWQgPSAocmVsOiBzdHJpbmcpID0+IHJlYWRGaWxlU3luYyhuZXcgVVJMKHJlbCwgaW1wb3J0Lm1ldGEudXJsKSwgJ3V0ZjgnKTsKCmNvbnN0IGdsb2JhbHNDc3MgPSByZWFkKCcuL2dsb2JhbHMuY3NzJyk7CmNvbnN0IHRva2Vuc0RvYyA9IHJlYWQoJy4uLy4uLy4uLy4uL2RvY3MvcHJvZHVjdC9ERVNJR05fU1lTVEVNX1RPS0VOUy5tZCcpOwoKLyoqIERlY2xhcmF0aW9ucyBvZiB0aGUgZmlyc3QgYHNlbGVjdG9yIHsg4oCmIH1gIGJsb2NrLCBjb21tZW50cyBzdHJpcHBlZC4gKi8KZnVuY3Rpb24gYmxvY2soY3NzOiBzdHJpbmcsIHNlbGVjdG9yOiAnOnJvb3QnIHwgJzpyb290LmxpZ2h0Jyk6IE1hcDxzdHJpbmcsIHN0cmluZz4gewogIGNvbnN0IGVzY2FwZWQgPSBzZWxlY3Rvci5yZXBsYWNlKCcuJywgJ1xcLicpOwogIGNvbnN0IGJvZHkgPSBuZXcgUmVnRXhwKGAoXnxcbikkvGVzY2FwZWR9XFxzKlxceyhbXn1dKilcXH1gKS5leGVjKGNzcyk/LlsyXTsKICBpZiAoYm9keSA9PT0gdW5kZWZpbmVkKSB0aHJvdyBuZXcgRXJyb3IoYG5vICR7c2VsZWN0b3J9IGJsb2NrYCk7CiAgY29uc3QgZGVjbHMgPSBuZXcgTWFwPHN0cmluZywgc3RyaW5nPigpOwogIGZvciAoY29uc3QgWywgcHJvcCwgdmFsdWVdIG9mIGJvZHkKICAgIC5yZXBsYWNlKC9cL1wqW1xzXFNdKj9cKlwvL2csICcnKQogICAgLm1hdGNoQWxsKC8oW1x3LV0rKVxzKjpccyooW147XSspOy9nKSkgewogICAgZGVjbHMuc2V0KHByb3AsIHZhbHVlLnRyaW0oKSk7CiAgfQogIHJldHVybiBkZWNsczsKfQoKY29uc3QgZGFyayA9IGJsb2NrKGdsb2JhbHNDc3MsICc6cm9vdCcpOwpjb25zdCBsaWdodCA9IGJsb2NrKGdsb2JhbHNDc3MsICc6cm9vdC5saWdodCcpOwoKZGVzY3JpYmUoJ2Rlc2lnbiB0b2tlbnMnLCAoKSA9PiB7CiAgaXQoJ3RoZSBsaWdodCB0aGVtZSByZWRlZmluZXMgZXZlcnkgZGFyayB0b2tlbiBhbmQgbm90aGluZyBlbHNlJywgKCkgPT4gewogICAgZXhwZWN0KFs...Li5saWdodC5rZXlzKCldLnNvcnQoKSkudG9FcXVhbChbLi4uZGFyay5rZXlzKCldLnNvcnQoKSk7CiAgfSk7CgogIGl0KCdERVNJR05fU1lTVEVNX1RPS0VOUy5tZCBkb2N1bWVudHMgYm90aCB0b2tlbiBzZXRzIGV4YWN0bHkgYXMgZ2xvYmFscy5jc3MgZGVmaW5lcyB0aGVtJywgKCkgPT4gewogICAgZXhwZWN0KE9iamVjdC5mcm9tRW50cmllcyhibG9jayh0b2tlbnNEb2MsICc6cm9vdCcpKSkudG9FcXVhbChPYmplY3QuZnJvbUVudHJpZXMoZGFyaykpOwogICAgZXhwZWN0KE9iamVjdC5mcm9tRW50cmllcyhibG9jayh0b2tlbnNEb2MsICc6cm9vdC5saWdodCcpKSkudG9FcXVhbChPYmplY3QuZnJvbUVudHJpZXMobGlnaHQpKTsKICB9KTsKCiAgaXQoJ2V2ZXJ5IFRhaWx3aW5kIGNvbG91ciByZWFkcyB0aGUgdG9rZW4gb2YgaXRzIG93biBuYW1lJywgKCkgPT4gewogICAgY29uc3QgY29sb3JzID0gdGFpbHdpbmRDb25maWcudGhlbWU/LmV4dGVuZD8uY29sb3JzIGFzIFJlY29yZDxzdHJpbmcsIHN0cmluZyB8IFJlY29yZDxzdHJpbmcsIHN0cmluZz4+OwogICAgZm9yIChjb25zdCBbbmFtZSwgdmFsdWVdIG9mIE9iamVjdC5lbnRyaWVzKGNvbG9ycykpIHsKICAgICAgY29uc3Qgc2hhZGVzID0gdHlwZW9mIHZhbHVlID09PSAnc3RyaW5nJyA/IHsgREVGQVVMVDogdmFsdWUgfSA6IHZhbHVlOwogICAgICBmb3IgKGNvbnN0IFtzaGFkZSwgY3NzXSBvZiBPYmplY3QuZW50cmllcyhzaGFkZXMpKSB7CiAgICAgICAgY29uc3QgdG9rZW4gPSBzaGFkZSA9PT0gJ0RFRkFVTFQnID8gbmFtZSA6IGAke25hbWV9LSR7c2hhZGV9YDsKICAgICAgICBleHBlY3QoY3NzLCBgY29sb3JzLiR7bmFtZX0uJHtzaGFkZX1gKS50b0JlKGBoc2wodmFyKC0tJHt0b2tlbn0pIC8gPGFscGhhLXZhbHVlPilgKTsKICAgICAgICBleHBlY3QoZGFyay5oYXMoYC0tJHt0b2tlbn1gKSwgYC0tJHt0b2tlbn0gaW4gOnJvb3RgKS50b0JlKHRydWUpOwogICAgICB9CiAgICB9CiAgfSk7CgogIGl0KCdldmVyeSB0b2tlbiBhIFRhaWx3aW5kIGJveFNoYWRvdyByZWFkcyBpcyBkZWZpbmVkJywgKCkgPT4gewogICAgY29uc3Qgc2hhZG93cyA9IHRhaWx3aW5kQ29uZmlnLnRoZW1lPy5leHRlbmQ/LmJveFNoYWRvdyBhcyBSZWNvcmQ8c3RyaW5nLCBzdHJpbmc+OwogICAgZm9yIChjb25zdCBjc3Mgb2YgT2JqZWN0LnZhbHVlcyhzaGFkb3dzKSkgewogICAgICBmb3IgKGNvbnN0IFssIHRva2VuXSBvZiBjc3MubWF0Y2hBbGwoL3Zhc1woKC0tW1x3LV0rKVwpL2cpKSB7CiAgICAgICAgZXhwZWN0KGRhcmsuaGFzKHRva2VuKSwgYCR7dG9rZW59IGluIDpyb290YCkudG9CZSh0cnVlKTsKICAgICAgfQogICAgfQogIH0pOwoKICBpdCgnZXZlcnkgc2hhZG93IHRva2VuIHJlYWRzIGEgQ1NTIHZhcmlhYmxlIGFuZCBjb250YWlucyBubyBsaXRlcmFsIGNvbG91cnMnLCAoKSA9PiB7CiAgICBjb25zdCBzaGFkb3dzID0gdGFpbHdpbmRDb25maWcudGhlbWU/LmV4dGVuZD8uYm94U2hhZG93IGFzIFJlY29yZDxzdHJpbmcsIHN0cmluZz47CiAgICBmb3IgKGNvbnN0IFtuYW1lLCBjc3NdIG9mIE9iamVjdC5lbnRyaWVzKHNoYWRvd3MpKSB7CiAgICAgIGV4cGVjdChjc3MsIGBib3hTaGFkb3cuJHtuYW1lfWApLnRvTWF0Y2goL3Zhc1woLS0vKTsKICAgICAgZXhwZWN0KGNzcywgYGJveFNoYWRvdy4ke25hbWV9YCkubm90LnRvTWF0Y2goLyMvKTsKICAgICAgZXhwZWN0KGNzcywgYGJveFNoYWRvdy4ke25hbWV9YCkubm90LnRvTWF0Y2goL2hzbFwoXHMqW1xkLl0vKTsKICAgICAgZXhwZWN0KGNzcywgYGJveFNoYWRvdy4ke25hbWV9YCkubm90LnRvTWF0Y2goL3JnYmE/XChccypbXGRdLyk7CiAgICB9CiAgfSk7CgogIGl0KCd0aGUgcmFkaXVzIHNjYWxlIGlzIG1vbm90b25pYyBmcm9tIHNtIHRvIDN4bCcsICgpID0+IHsKICAgIGNvbnN0IHJhZGl1cyA9IHRhaWx3aW5kQ29uZmlnLnRoZW1lPy5leHRlbmQ/LmJvcmRlclJhZGl1cyBhcyBSZWNvcmQ8c3RyaW5nLCBzdHJpbmc+OwogICAgY29uc3Qgb3JkZXIgPSBbJ3NtJywgJ21kJywgJ2xnJywgJ3hsJywgJzJ4bCcsICczeGwnXTsKICAgIGNvbnN0IHNpemVzID0gb3JkZXIubWFwKChzdGVwKSA9PiB7CiAgICAgIGNvbnN0IHZhbHVlID0gcmFkaXVzW3N0ZXBdOwogICAgICBleHBlY3QodmFsdWUsIGByYWRpdXMuJHtzdGVwfWApLnRvQmVUcnV0aHkoKTsKICAgICAgZXhwZWN0KHZhbHVlLCBgcmFkaXVzLiR7c3RlcH1gKS50b0NvbnRhaW4oJ3ZhcigtLXJhZGl1cyknKTsKICAgICAgY29uc3Qgb2Zmc2V0ID0gLyhjYWxjXCh2YXIoLS1yYWRpdXMpXHMqKFstK10pXHMqKFtcZC5dK3JlbSlcKSkvLmV4ZWModmFsdWUpOwogICAgICBpZiAoIW9mZnNldCkgcmV0dXJuIDA7CiAgICAgIGNvbnN0IGFtb3VudCA9IE51bWJlcihvZmZzZXRbM10ucmVwbGFjZSgncmVtJywgJycpKTsKICAgICAgcmV0dXJuIG9mZnNldFsyXSA9PT0gJy0nID8gLWFtb3VudCA6IGFtb3VudDsKICAgIH0pOwogICAgZm9yIChsZXQgaSA9IDE7IGkgPCBzaXplcy5sZW5ndGg7IGkrID0gMSkgewogICAgICBleHBlY3Qoc2l6ZXNbaV0sIGAke29yZGVyW2ldfSBtdXN0IGJlIGF0IGxlYXN0IGFzIGxhcmdlIGFzICR7b3JkZXJbaSAtIDFdfWApLnRvQmVHcmVhdGVyVGhhbk9yRXF1YWwoc2l6ZXNbaSAtIDFdKTsKICAgIH0KICB9KTsKCiAgaXQoJ29uY2hhaW4gaXMgb25lIGNvbG91cjogdGhlIHRva2VuIGFsaWFzZXMgcHJpbWFyeSBhbmQgdGhlIHZhcmlhbnRzIHVzZSBvbmx5IGl0JywgKCkgPT4gewogICAgZXhwZWN0KGRhcmsuZ2V0KCctLW9uY2hhaW4nKSkudG9CZShkYXJrLmdldCgnLS1wcmltYXJ5JykpOwogICAgZXhwZWN0KGxpZ2h0LmdldCgnLS1vbmNoYWluJykpLnRvQmUobGlnaHQuZ2V0KCctLXByaW1hcnknKSk7CiAgICBleHBlY3QoCiAgICAgICh0YWlsd2luZENvbmZpZy50aGVtZT8uZXh0ZW5kPy5ib3hTaGFkb3cgYXMgUmVjb3JkPHN0cmluZywgc3RyaW5nPilbJ2dsb3ctb25jaGFpbiddLAogICAgKS50b0NvbnRhaW4oJ3ZhcigtLW9uY2hhaW4pJyk7CgogICAgY29uc3QgYmFkZ2UgPSBTdHJpbmcoQmFkZ2UoeyB2YXJpYW50OiAnb25jaGFpbicgfSkucHJvcHMuY2xhc3NOYW1lKS5zcGxpdCgnICcpOwogICAgZXhwZWN0KGJhZGdlKS50b0VxdWFsKGV4cGVjdC5hcnJheUNvbnRhaW5pbmcoWydib3JkZXItb25jaGFpbi8zMCcsICdiZy1vbmNoYWluLzEwJywgJ3RleHQtb25jaGFpbiddKSk7CiAgICBjb25zdCBidXR0b24gPSBidXR0b25WYXJpYW50cyh7IHZhcmlhbnQ6ICdvbmNoYWluJyB9KS5zcGxpdCgnICcpOwogICAgZXhwZWN0KGJ1dHRvbikudG9FcXVhbChleHBlY3QuYXJyYXlDb250YWluaW5nKFsnYmctb25jaGFpbicsICdzaGFkb3ctZ2xvdy1vbmNoYWluJ10pKTsKICAgIGZvciAoY29uc3QgY2xzIG9mIFsuLi5iYWRnZSwgLi4uYnV0dG9uXSkgZXhwZWN0KGNscykubm90LnRvTWF0Y2goL3NlY29uZGFyeS8pOwogIH0pOwp9KTsK
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+import tailwindConfig from '../../tailwind.config';
+import { Badge } from '@/components/ui/badge';
+import { buttonVariants } from '@/components/ui/button';
+
+const read = (rel: string) => readFileSync(new URL(rel, import.meta.url), 'utf8');
+
+const globalsCss = read('./globals.css');
+const tokensDoc = read('../../../../docs/product/DESIGN_SYSTEM_TOKENS.md');
+
+/** Declarations of the first `selector { … }` block, comments stripped. */
+function block(css: string, selector: ':root' | ':root.light'): Map<string, string> {
+  const escaped = selector.replace('.', '\\.');
+  const body = new RegExp(`(^|\\n)${escaped}\\s*\\{([^}]*)\\}`).exec(css)?.[2];
+  if (body === undefined) throw new Error(`no ${selector} block`);
+  const decls = new Map<string, string>();
+  for (const [, prop, value] of body
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .matchAll(/([\w-]+)\s*:\s*([^;]+);/g)) {
+    decls.set(prop, value.trim());
+  }
+  return decls;
+}
+
+const dark = block(globalsCss, ':root');
+const light = block(globalsCss, ':root.light');
+
+describe('design tokens', () => {
+  it('the light theme redefines every dark token and nothing else', () => {
+    expect([...light.keys()].sort()).toEqual([...dark.keys()].sort());
+  });
+
+  it('DESIGN_SYSTEM_TOKENS.md documents both token sets exactly as globals.css defines them', () => {
+    expect(Object.fromEntries(block(tokensDoc, ':root'))).toEqual(Object.fromEntries(dark));
+    expect(Object.fromEntries(block(tokensDoc, ':root.light'))).toEqual(Object.fromEntries(light));
+  });
+
+  it('every Tailwind colour reads the token of its own name', () => {
+    const colors = tailwindConfig.theme?.extend?.colors as Record<string, string | Record<string, string>>;
+    for (const [name, value] of Object.entries(colors)) {
+      const shades = typeof value === 'string' ? { DEFAULT: value } : value;
+      for (const [shade, css] of Object.entries(shades)) {
+        const token = shade === 'DEFAULT' ? name : `${name}-${shade}`;
+        expect(css, `colors.${name}.${shade}`).toBe(`hsl(var(--${token}) / <alpha-value>)`);
+        expect(dark.has(`--${token}`), `--${token} in :root`).toBe(true);
+      }
+    }
+  });
+
+  it('every token a Tailwind boxShadow reads is defined', () => {
+    const shadows = tailwindConfig.theme?.extend?.boxShadow as Record<string, string>;
+    for (const css of Object.values(shadows)) {
+      for (const [, token] of css.matchAll(/var\((--[\w-]+)\)/g)) {
+        expect(dark.has(token), `${token} in :root`).toBe(true);
+      }
+    }
+  });
+
+  it('onchain is one colour: the token aliases primary and the variants use only it', () => {
+    expect(dark.get('--onchain')).toBe(dark.get('--primary'));
+    expect(light.get('--onchain')).toBe(light.get('--primary'));
+    expect(
+      (tailwindConfig.theme?.extend?.boxShadow as Record<string, string>)['glow-onchain'],
+    ).toContain('var(--onchain)');
+
+    const badge = String(Badge({ variant: 'onchain' }).props.className).split(' ');
+    expect(badge).toEqual(expect.arrayContaining(['border-onchain/30', 'bg-onchain/10', 'text-onchain']));
+    const button = buttonVariants({ variant: 'onchain' }).split(' ');
+    expect(button).toEqual(expect.arrayContaining(['bg-onchain', 'shadow-glow-onchain']));
+    for (const cls of [...badge, ...button]) expect(cls).not.toMatch(/secondary/);
+  });
+});
+
+/** A `borderRadius` value in rem: `var(--radius)` or `calc(var(--radius) ± Nrem)`. */
+function radiusRem(css: string, radius: number): number {
+  if (css === 'var(--radius)') return radius;
+  const m = /^calc\(var\(--radius\) ([+-]) ([\d.]+)rem\)$/.exec(css);
+  if (!m) throw new Error(`radius not built from --radius: ${css}`);
+  return radius + (m[1] === '-' ? -1 : 1) * Number(m[2]);
+}
+
+const RADIUS_STEPS = ['sm', 'md', 'lg', 'xl', '2xl', '3xl'] as const;
+
+describe('radius and shadow scales', () => {
+  const radii = tailwindConfig.theme?.extend?.borderRadius as Record<string, string>;
+  const shadows = tailwindConfig.theme?.extend?.boxShadow as Record<string, string>;
+
+  it('every rounded-* step from sm to 3xl is rounder than the one before, in both themes', () => {
+    for (const theme of [dark, light]) {
+      const radius = Number(/^([\d.]+)rem$/.exec(theme.get('--radius') ?? '')?.[1]);
+      expect(radius).toBeGreaterThan(0);
+      const rems = RADIUS_STEPS.map((step) => radiusRem(radii[step] ?? `missing ${step}`, radius));
+      for (let i = 1; i < rems.length; i++) {
+        expect(rems[i], `${RADIUS_STEPS[i]} > ${RADIUS_STEPS[i - 1]}`).toBeGreaterThan(rems[i - 1]);
+      }
+      expect(rems[0]).toBeGreaterThan(0);
+    }
+  });
+
+  it('DESIGN_SYSTEM_TOKENS.md lists the full radius scale with the values the config computes', () => {
+    const radius = Number(/^([\d.]+)rem$/.exec(dark.get('--radius')!)![1]);
+    const documented = Object.fromEntries(
+      [...tokensDoc.matchAll(/`(sm|md|lg|xl|2xl|3xl) ([\d.]+)rem`/g)].map(([, step, rem]) => [step, Number(rem)]),
+    );
+    expect(documented).toEqual(
+      Object.fromEntries(RADIUS_STEPS.map((step) => [step, radiusRem(radii[step], radius)])),
+    );
+  });
+
+  it('every shadow token reads a CSS variable and has no literal colour', () => {
+    for (const [name, css] of Object.entries(shadows)) {
+      expect(css, `boxShadow.${name}`).toMatch(/(hsl|rgb)a?\(var\(--[\w-]+\)/);
+      expect(css, `boxShadow.${name}`).not.toMatch(/#[\da-f]{3,8}\b/i);
+      expect(css, `boxShadow.${name}`).not.toMatch(/(hsl|rgb)a?\(\s*[\d.]/);
+      // every colour in the shadow is a token, not just one of them
+      expect(css.match(/(hsl|rgb)a?\(/g)?.length, `boxShadow.${name}`).toBe(css.match(/(hsl|rgb)a?\(var\(/g)?.length);
+    }
+    expect(Object.keys(shadows)).toEqual(expect.arrayContaining(['card', 'popover', 'toast']));
+    // the drop shadow is theme-aware: the light theme's shadow colour is not the dark one
+    expect(light.get('--glass-shadow')).not.toBe(dark.get('--glass-shadow'));
+  });
+
+  it('DESIGN_SYSTEM_TOKENS.md lists every shadow exactly as the config defines it', () => {
+    const documented = Object.fromEntries(
+      [...tokensDoc.matchAll(/^shadow-([\w-]+):\s+(.+?);/gm)].map(([, name, css]) => [name, css]),
+    );
+    expect(documented).toEqual(shadows);
+  });
+
+  it('components use the shadow tokens, not Tailwind\u2019s default shadow scale', () => {
+    const src = join(dirname(fileURLToPath(import.meta.url)), '..');
+    const offenders = (readdirSync(src, { recursive: true }) as string[])
+      .filter((f) => /\.tsx?$/.test(f) && !/\.test\.tsx?$/.test(f))
+      .flatMap((f) =>
+        readFileSync(join(src, f), 'utf8')
+          .split('\n')
+          .flatMap((line, i) =>
+            /(^|[\s"'`:])shadow(-(sm|md|lg|xl|2xl|inner))?(?=[\s"'`]|$)/.test(line) ? [`${f}:${i + 1}`] : [],
+          ),
+      );
+    expect(offenders).toEqual([]);
+  });
+});
