@@ -69,13 +69,17 @@ const config: Config = {
         mono: ['var(--font-mono)', 'monospace'],
       },
       borderRadius: {
-        lg: 'var(--radius)',
-        md: 'calc(var(--radius) - 0.25rem)',
         sm: 'calc(var(--radius) - 0.5rem)',
+        md: 'calc(var(--radius) - 0.25rem)',
+        lg: 'var(--radius)',
         xl: 'calc(var(--radius) + 0.25rem)',
+        '2xl': 'calc(var(--radius) + 0.5rem)',
+        '3xl': 'calc(var(--radius) + 1rem)',
       },
       boxShadow: {
-        card: '0 1px 0 0 hsl(0 0% 100% / 0.04) inset, 0 8px 30px -12px hsl(230 60% 2% / 0.8)',
+        card: 'inset 0 1px 0 0 hsl(var(--hairline) / 0.06), 0 8px 30px -12px hsl(var(--glass-shadow) / 0.35)',
+        popover: 'inset 0 1px 0 0 hsl(var(--hairline) / 0.06), 0 16px 40px -16px hsl(var(--glass-shadow) / 0.45)',
+        toast: 'inset 0 1px 0 0 hsl(var(--hairline) / 0.06), 0 24px 56px -24px hsl(var(--glass-shadow) / 0.55)',
         'glow-primary': '0 0 24px -4px hsl(var(--primary) / 0.45)',
         'glow-onchain': '0 0 24px -4px hsl(var(--onchain) / 0.40)',
       },
@@ -94,7 +98,7 @@ const config: Config = {
           '100%': { transform: 'scale(1)' },
         },
         twinkle: {
-          '0%,100%': { opacity: '0.35' },
+          '0,100%': { opacity: '0.35' },
           '50%': { opacity: '1' },
         },
         float: {

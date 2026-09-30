@@ -18,7 +18,7 @@
   --popover-foreground: 250 28% 96%;
 
   --primary: 265 100% 66%; /* electric violet — primary / chain */
-  --primary-foreground: 0 0% 100%;
+  --primary-foreground: 265 60% 6%;
 
   --secondary: 157 84% 52%; /* mint green — earned / verified energy */
   --secondary-foreground: 265 60% 6%;
@@ -30,7 +30,7 @@
   --accent-foreground: 265 60% 6%;
 
   --destructive: 350 82% 62%;
-  --destructive-foreground: 250 30% 97%;
+  --destructive-foreground: 265 60% 6%;
   --success: 157 84% 52%;
   --warning: 38 95% 62%;
 
@@ -44,6 +44,8 @@
 
   /* the signature flow + depth surfaces */
   --tertiary: 193 100% 52%; /* cyan — social / connection */
+  /* violet stop of .flow, kept light enough for the dark flow-button label to clear AA */
+  --flow-violet: 265 100% 66%;
   --surface: 266 34% 9%;
   --surface-2: 266 30% 12%;
   --hairline: 260 60% 100%;
@@ -58,6 +60,11 @@
   --nebula-b: 24 70% 18%;
   --aurora-base: 228 40% 7%;
   --glass-shadow: 230 60% 2%;
+  --shadow-popover: 230 60% 2%;
+  --shadow-toast: 230 60% 2%;
+  --shadow-card-color: 230 60% 2%;
+  --shadow-card-strength: 0.5;
+  --shadow-popover-strength: 0.6;
 }
 
 /* Light theme — mirrors the HSL token set with a pale violet base. */
@@ -79,7 +86,7 @@
   --accent: 36 100% 55%;
   --accent-foreground: 265 60% 8%;
   --destructive: 350 82% 55%;
-  --destructive-foreground: 250 30% 98%;
+  --destructive-foreground: 265 60% 8%;
   --success: 157 84% 45%;
   --warning: 38 95% 55%;
   --border: 265 26% 85%;
@@ -89,6 +96,7 @@
   --onchain: 265 100% 60%;
   --radius: 0.875rem;
   --tertiary: 193 100% 45%;
+  --flow-violet: 265 100% 68%;
   --surface: 266 34% 97%;
   --surface-2: 266 30% 93%;
   --hairline: 260 60% 15%;
@@ -98,6 +106,11 @@
   --nebula-b: 24 70% 82%;
   --aurora-base: 228 40% 96%;
   --glass-shadow: 230 40% 30%;
+  --shadow-popover: 230 40% 30%;
+  --shadow-toast: 230 40% 30%;
+  --shadow-card-color: 230 40% 30%;
+  --shadow-card-strength: 0.12;
+  --shadow-popover-strength: 0.16;
 }
 
 
@@ -146,10 +159,10 @@
   .flow {
     background-image: linear-gradient(
       110deg,
-      hsl(var(--primary)),
+      hsl(var(--flow-violet)),
       hsl(var(--tertiary)),
       hsl(var(--secondary)),
-      hsl(var(--primary))
+      hsl(var(--flow-violet))
     );
     background-size: 280% 100%;
     animation: gradient-pan 8s ease-in-out infinite;
@@ -179,7 +192,7 @@
     border: 1px solid hsl(var(--hairline) / 0.07);
     box-shadow:
       inset 0 1px 0 0 hsl(var(--hairline) / 0.06),
-      0 24px 60px -28px hsl(var(--glass-shadow) / 0.8);
+      0 24px 60px -28px hsl(var(--glass-shadow) / var(--shadow-card-strength));
   }
 
   /* Faint technical grid — the "engineered" motif from chain sites, masked to fade out. */
@@ -219,6 +232,23 @@
 
   .text-glow {
     text-shadow: 0 0 28px hsl(var(--primary) / 0.35);
+  }
+
+  /* Theme-aware elevation shadows — read CSS variables so they follow the theme. */
+  .shadow-card {
+    box-shadow:
+      inset 0 1px 0 0 hsl(var(--hairline) / 0.06),
+      0 24px 60px -28px hsl(var(--shadow-card-color) / var(--shadow-card-strength));
+  }
+  .shadow-popover {
+    box-shadow:
+      inset 0 1px 0 0 hsl(var(--hairline) / 0.06),
+      0 16px 40px -20px hsl(var(--shadow-popover) / var(--shadow-popover-strength));
+  }
+  .shadow-toast {
+    box-shadow:
+      inset 0 1px 0 0 hsl(var(--hairline) / 0.06),
+      0 12px 32px -16px hsl(var(--shadow-toast) / var(--shadow-popover-strength));
   }
 
   /* Eyebrow — the small uppercase kicker above headings (chain-site rhythm). */
