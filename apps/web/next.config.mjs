@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { contentSecurityPolicy } from './src/config/csp.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -25,6 +26,13 @@ const nextConfig = {
             value:
               'camera=(), microphone=(), geolocation=(), publickey-credentials-get=(self), publickey-credentials-create=(self)',
           },
+          {
+            // Report-only first (#179): violations reach /api/csp-report and nothing is
+            // blocked. After a clean week on preview and production, rename the key to
+            // Content-Security-Policy to enforce it (docs/CSP.md).
+            key: 'Content-Security-Policy-Report-Only',
+            value: contentSecurityPolicy(process.env),
+          },
         ],
       },
       {
@@ -37,11 +45,7 @@ const nextConfig = {
   },
   // @alvinmunk/shared and @alvinmunk/sdk ship raw TS in the workspace; let Next transpile them.
   // passkey-kit (+ its sibling SDKs) also ship raw, uncompiled TS → transpile them too.
-  transpilePackages: ['@alvinmunk/shared', '@alvinmunk/sdk', 'passkey-kit', 'passkey-kit-sdk', 'sac-sdk'],
-  experimental: {
-    // stellar-sdk pulls some node-ish deps; keep server externals tidy.
-    serverComponentsExternalPackages: ['@stellar/stellar-sdk'],
-  },
+  transpilePackages: ['@alvinmunk/shared', '@alvinmunk/sdk', 'passkey-kit', 'passkey-kit-sdk', 'sac-sdk', '@stellar/stellar-sdk'],
   images: {
     // The sticker asset kit (public/assets/**) is already web-optimized art; skip Next's
     // recompression so every sticker/illustration stays pixel-for-pixel lossless.

@@ -8,6 +8,7 @@ import { Address, scValToNative, xdr, type rpc } from '@stellar/stellar-sdk';
 import { EVENTS } from '@alvinmunk/shared';
 import { server, config } from './stellar';
 import { shareInFlight } from './utils';
+import type { ReadNetwork } from './read-network';
 
 /**
  * RPC event retention is ~24h; staying within ~9000 ledgers keeps `getEvents` returning
@@ -28,11 +29,30 @@ export const PAGE_SIZE = 1000;
  */
 export const MAX_PAGES = 10;
 
+/**
+ * How long a settled window scan (`fetchReputationEvents`, `fetchTipEvents`) is reused. The
+ * dashboard's readers mount seconds apart — the 3D hero waits for its bundle, the feed
+ * doesn't — so sharing only in-flight scans still read the same window twice per load.
+ */
+export const EVENT_WINDOW_TTL_MS = 15_000;
+
+/** How a window read may be served. */
+export interface WindowReadOptions {
+  /** Reject when the RPC fails instead of degrading to []. */
+  throwOnError?: boolean;
+  /** Reuse a settled scan up to this old (default `EVENT_WINDOW_TTL_MS`); 0 always scans. */
+  maxAgeMs?: number;
+}
+
 /** A decoded contract event: topics + value already run through scValToNative. */
 export interface RepEvent {
   topics: unknown[];
   data: unknown;
   ledger: number;
+  /** The RPC's event id (unique per event), when it reported one. */
+  id?: string;
+  /** Ledger close time in unix seconds, when the RPC reported it. */
+  closedAt?: number;
 }
 
 /**
@@ -54,10 +74,23 @@ export function decodeScVal(v: xdr.ScVal | string): unknown {
  * the last element is the newest — the scan follows the RPC cursor across pages up to
  * MAX_PAGES. Returns [] if the contract isn't deployed or RPC is unavailable so every
  * caller degrades gracefully. Concurrent callers (feed, constellation, badges mounting
- * together) share one scan.
+ * together) share one scan, and a settled one is reused for `EVENT_WINDOW_TTL_MS`.
  */
-export async function fetchReputationEvents(options?: { throwOnError?: boolean }): Promise<RepEvent[]> {
-  return fetchContractEvents(config.contracts.reputation, ['*', '*'], PAGE_SIZE * MAX_PAGES, options?.throwOnError);
+export async function fetchReputationEvents(
+  options?: WindowReadOptions & {
+    /** Read another network (the ?network= override); default: the deployment's. */
+    net?: ReadNetwork | null;
+  },
+): Promise<RepEvent[]> {
+  const { net, ...window } = options ?? {};
+  const contractId = net ? net.contracts.reputation : config.contracts.reputation;
+  return fetchContractEvents(
+    contractId,
+    ['*', '*'],
+    PAGE_SIZE * MAX_PAGES,
+    { maxAgeMs: EVENT_WINDOW_TTL_MS, ...window },
+    net,
+  );
 }
 
 /**
@@ -67,9 +100,25 @@ export async function fetchReputationEvents(options?: { throwOnError?: boolean }
  * only match events with exactly as many topics, so a 2-segment wildcard never sees tips.
  * Returns [] if the contract isn't deployed or RPC is unavailable.
  */
-export async function fetchTipEvents(options?: { throwOnError?: boolean }): Promise<RepEvent[]> {
+export async function fetchTipEvents(options?: WindowReadOptions): Promise<RepEvent[]> {
   const tipped = xdr.ScVal.scvSymbol(EVENTS.TIPPED).toXDR('base64');
-  return fetchContractEvents(config.contracts.rewards, [tipped, '*', '*'], PAGE_SIZE * MAX_PAGES, options?.throwOnError);
+  return fetchContractEvents(config.contracts.rewards, [tipped, '*', '*'], PAGE_SIZE * MAX_PAGES, {
+    maxAgeMs: EVENT_WINDOW_TTL_MS,
+    ...options,
+  });
+}
+
+/**
+ * Every quest-registry event in the window with two topics — `('quest', created | awarded |
+ * att_bind | att_clear)` and `('streak', player)` — decoded, oldest-first, sharing the
+ * window cache like the reads above. Returns [] if the contract isn't deployed or RPC is
+ * unavailable.
+ */
+export async function fetchQuestEvents(options?: WindowReadOptions): Promise<RepEvent[]> {
+  return fetchContractEvents(config.contracts.questRegistry, ['*', '*'], PAGE_SIZE * MAX_PAGES, {
+    maxAgeMs: EVENT_WINDOW_TTL_MS,
+    ...options,
+  });
 }
 
 /**
@@ -95,15 +144,40 @@ export async function fetchTipsSent(from: string, limit = 1): Promise<RepEvent[]
 }
 
 const pendingScans = new Map<string, Promise<RepEvent[]>>();
+const settledScans = new Map<string, { events: RepEvent[]; at: number }>();
 
-function fetchContractEvents(contractId: string, topics: string[], limit: number, throwOnError?: boolean): Promise<RepEvent[]> {
+/** Forget every settled scan, so the next read of each window goes to the RPC. */
+export function clearEventCache(): void {
+  settledScans.clear();
+}
+
+/**
+ * One scan per window however callers ask for it: callers that degrade and callers that
+ * `throwOnError` share the same (throwing) scan, and only a successful one is kept — a
+ * failed read must not blank every reader for the TTL. The wrappers above are the usual
+ * way in; it is exported for a contract/topic window they don't cover (#279).
+ */
+export function fetchContractEvents(
+  contractId: string,
+  topics: string[],
+  limit: number,
+  { throwOnError, maxAgeMs = 0 }: WindowReadOptions = {},
+  net?: ReadNetwork | null,
+): Promise<RepEvent[]> {
   if (!contractId) {
     if (throwOnError) return Promise.reject(new Error('No contract ID'));
     return Promise.resolve([]);
   }
-  return shareInFlight(pendingScans, `${contractId}|${topics.join(',')}|${limit}|${throwOnError}`, () =>
-    scanContractEvents(contractId, topics, limit, throwOnError),
-  );
+  // One network's window never answers for the other's (the ?network= override).
+  const key = `${net?.network ?? ''}|${contractId}|${topics.join(',')}|${limit}`;
+  const hit = settledScans.get(key);
+  if (hit && Date.now() - hit.at < maxAgeMs) return Promise.resolve(hit.events);
+  const scan = shareInFlight(pendingScans, key, async () => {
+    const events = await scanContractEvents(net?.server ?? server, contractId, topics, limit);
+    settledScans.set(key, { events, at: Date.now() });
+    return events;
+  });
+  return throwOnError ? scan : scan.catch(() => []);
 }
 
 /**
@@ -115,44 +189,41 @@ function fetchContractEvents(contractId: string, topics: string[], limit: number
  *     events, ascending. A full page's `cursor` is its last event; a short page's is the
  *     end of the scanned range — and as the window fits in one scan, that end is the
  *     latest ledger, so a short page means the scan has caught up.
- * A request failing part-way drops the whole scan to []: an oldest-only prefix would read
- * to every caller as "nothing happened since".
+ * A request failing part-way rejects the whole scan (plain callers read []): an oldest-only
+ * prefix would read to every caller as "nothing happened since".
  */
-async function scanContractEvents(contractId: string, topics: string[], limit: number, throwOnError?: boolean): Promise<RepEvent[]> {
-  let startLedger: number;
-  try {
-    const latest = await server.getLatestLedger();
-    startLedger = Math.max(1, latest.sequence - EVENT_LEDGER_WINDOW);
-  } catch (err) {
-    if (throwOnError) throw err;
-    return [];
-  }
+async function scanContractEvents(
+  server: rpc.Server,
+  contractId: string,
+  topics: string[],
+  limit: number,
+): Promise<RepEvent[]> {
+  const latest = await server.getLatestLedger();
+  const startLedger = Math.max(1, latest.sequence - EVENT_LEDGER_WINDOW);
 
   const filters: rpc.Api.EventFilter[] = [
     { type: 'contract', contractIds: [contractId], topics: [topics] },
   ];
   const out: RepEvent[] = [];
-  try {
-    let cursor: string | undefined;
-    for (let page = 0; page < MAX_PAGES && out.length < limit; page++) {
-      const pageLimit = Math.min(PAGE_SIZE, limit - out.length);
-      const res = await server.getEvents(
-        cursor ? { filters, cursor, limit: pageLimit } : { filters, startLedger, limit: pageLimit },
-      );
-      for (const ev of res.events) {
-        out.push({
-          topics: (ev.topic as Array<xdr.ScVal | string>).map(decodeScVal),
-          data: decodeScVal(ev.value as xdr.ScVal | string),
-          ledger: ev.ledger,
-        });
-      }
-      // Caught up — or a full page without a cursor, which must not restart from startLedger.
-      if (res.events.length < pageLimit || !res.cursor) break;
-      cursor = res.cursor;
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_PAGES && out.length < limit; page++) {
+    const pageLimit = Math.min(PAGE_SIZE, limit - out.length);
+    const res = await server.getEvents(
+      cursor ? { filters, cursor, limit: pageLimit } : { filters, startLedger, limit: pageLimit },
+    );
+    for (const ev of res.events) {
+      const closedAt = Math.floor(Date.parse(ev.ledgerClosedAt) / 1000);
+      out.push({
+        topics: (ev.topic as Array<xdr.ScVal | string>).map(decodeScVal),
+        data: decodeScVal(ev.value as xdr.ScVal | string),
+        ledger: ev.ledger,
+        ...(ev.id ? { id: ev.id } : {}),
+        ...(Number.isFinite(closedAt) ? { closedAt } : {}),
+      });
     }
-  } catch (err) {
-    if (throwOnError) throw err;
-    return [];
+    // Caught up — or a full page without a cursor, which must not restart from startLedger.
+    if (res.events.length < pageLimit || !res.cursor) break;
+    cursor = res.cursor;
   }
   return out;
 }

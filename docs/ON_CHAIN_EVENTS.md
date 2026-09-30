@@ -287,6 +287,29 @@ Note: this event is emitted **after** the cross-contract call to
 | 0 | `u32` | `quest_id` |
 | 1 | `Address` | `recipient` |
 
+### `quest` / `period` (Quest Repeat Period Set)
+
+The admin changed how often a quest can be completed with `set_quest_period(quest_id,
+period_secs)` (#154): `0` makes it one-shot again, `604_800` weekly. See
+[Repeatable quests](#repeatable-quests-set_quest_period--get_quest_periods).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| **topics[0]** | `Symbol("quest")` | Event discriminator |
+| **topics[1]** | `Symbol("period")` | Sub-type |
+
+**Data tuple**:
+
+| Index | Type | Description |
+|-------|------|-------------|
+| 0 | `u32` | `quest_id` |
+| 1 | `u64` | `period_secs` — the new repeat period (`0` = one-shot) |
+
+```rust
+env.events().publish(
+    (symbol_short!("quest"), symbol_short!("period")), (id, period_secs));
+```
+
 ### `quest` / `att_bind` (Quest Attester Bound)
 
 The admin bound a quest to one attester key with `set_quest_attester(quest_id, key)`.
@@ -591,7 +614,9 @@ env.events().publish(
 ### `gate` / `created`
 
 An access gate is defined or replaced by the admin, with `create_gate` (one rule) or
-`create_gate_rules` (a composite gate). Both emit the same event.
+`create_gate_rules` (a composite gate). Both emit the same event. For an id that already
+exists it marks a new definition: the gate's version (`get_gate_version`) goes up by one
+and unlocks made under the previous definition stop counting.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -606,7 +631,10 @@ An access gate is defined or replaced by the admin, with `create_gate` (one rule
 
 ### `unlocked`
 
-A user claims a gate they pass, recording on-chain proof of unlock.
+A user claims a gate they pass, recording on-chain proof of unlock. The proof holds for the
+definition the gate had at that moment: a later `gate`/`created` for the same `id`
+supersedes it (the user must `unlock` again), and it doesn't count while the gate is
+inactive. See `UnlockRecord` below for the stored record.
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -787,7 +815,7 @@ Quick-reference table of all event discriminators and their sub-types.
 | `social` | *(none)* | Reputation | [↑](#social-social-track-total) |
 | `attester` | `add`, `rm` | Reputation | [↑](#attester-allowlist-change) |
 | `vouch` | `minted`, `claimed`, `slashed` | Reputation | [↑](#vouch-async-half-card-lifecycle) |
-| `quest` | `created`, `awarded`, `att_bind`, `att_clear` | QuestRegistry | [↑](#2-questregistry-contract) |
+| `quest` | `created`, `awarded`, `period`, `att_bind`, `att_clear` | QuestRegistry | [↑](#2-questregistry-contract) |
 | `streak` | *(none)* | QuestRegistry | [↑](#streak-weekly-retention) |
 | `att_key` | `budget`, `near_cap` | QuestRegistry | [↑](#att_key--budget-attester-budget-set) |
 | `handle` | `claimed`, `released`, `moved` | Registry | [↑](#3-registry-contract-handles) |
@@ -1123,7 +1151,9 @@ pub struct QuestConfig {
 `is_completed(quest_id, who) -> bool` reads the replay guard `award_quest` sets, the
 persistent entry `DataKey::Claimed(quest_id, who)`: `true` once `who` has been awarded the
 quest, and from then on another award for the pair reverts with `AlreadyClaimed` (#5). An
-unknown quest, or an award that reverted, reads as `false`.
+unknown quest, or an award that reverted, reads as `false`. For a repeatable quest it reads
+the current period's guard, `DataKey::ClaimedIn(quest_id, who, epoch)`, so it turns `false`
+again when the period rolls over.
 
 `get_completed(who, ids: Vec<u32>) -> Vec<bool>` is the batched form for one wallet: one
 flag per id, in input order, duplicates repeated. Each id is one persistent read, so keep a
@@ -1134,6 +1164,35 @@ A contract deployed before these views has neither; treat a failed call as "unkn
 web app then shows every quest as available, and `/api/attest` goes on to verify the
 evidence as before, since the on-chain guard still refuses a second award. With the views,
 `/api/attest` answers `409` for a completed quest before it verifies any evidence.
+
+### Repeatable quests (`set_quest_period` / `get_quest_periods`)
+
+A quest is one-shot by default: each wallet completes it once, ever. `set_quest_period(id,
+period_secs)` (admin) makes it completable once per period instead. Periods are aligned on
+the Unix epoch like the streak week, so `604_800` repeats weekly from Thursday 00:00 UTC,
+and the period index is `epoch = ledger timestamp / period_secs`. `0` makes the quest
+one-shot again. It reverts with `QuestNotFound` (#4) for an unknown quest and
+`InvalidPeriod` (#9) for a period above 0 but under a day (86 400 s), and emits
+`quest` / `period`. The period lives under its own key, `DataKey::QuestPeriod(id)`, so
+`QuestConfig` keeps its shape and `create_quest` leaves the period as it is.
+
+`get_quest_periods(ids: Vec<u32>) -> Vec<u64>` returns each quest's period in input order,
+`0` for a one-shot or unknown quest.
+
+A repeatable quest's replay guard is `DataKey::ClaimedIn(quest_id, recipient, epoch)`: one
+award per recipient per period, kept about two periods (it can't matter after its own).
+One-shot quests keep `DataKey::Claimed(quest_id, recipient)`. So switching a quest back to
+one-shot applies the once-ever guard again, and a wallet that only completed the repeating
+version can complete it once more. A change takes effect on the next award, and signatures
+issued under the old setting stop verifying (see the payload below).
+
+The attester (`/api/attest`) signs a repeatable quest only for evidence dated inside the
+current period: a PR merged, an invite's vouch claimed, or three vouches claimed within
+it. A referral has no date it can read, so a repeatable quest can't take `referral_tx`
+evidence (`422`). Its signature expires at the end of the period at the latest.
+
+A contract deployed before repeatable quests has neither function; every quest there is
+one-shot, and the app and attester read a failed `get_quest_periods` as "all one-shot".
 
 ### Quest attester scope (`get_quest_attester`)
 
@@ -1196,13 +1255,45 @@ protocol's message or a later payload format (which must take a new tag). Test v
 
 For a `C…` recipient (32 × `0x33`) index 4 is
 `00000012000000013333333333333333333333333333333333333333333333333333333333333333`.
+
+**Repeatable quests** sign a vec of 8 instead, tagged `"alvinmunk_award_quest_v2"`
+(`AWARD_DOMAIN_V2`), with the period and its index inserted before the expiry:
+
+| Index | ScVal | Value |
+|-------|-------|-------|
+| 0 | `Symbol` | `"alvinmunk_award_quest_v2"` |
+| 1–4 | | as above: network id, contract, `quest_id`, `recipient` |
+| 5 | `U64` | `period_secs` — the quest's repeat period |
+| 6 | `U64` | `epoch` — `ledger timestamp / period_secs` when `award_quest` runs |
+| 7 | `U64` | `expires_at` |
+
+`award_quest` rebuilds it with the epoch of the ledger it runs in, so a signature issued in
+one period never verifies in the next, and one issued before the period changed never
+verifies after. One-shot quests keep the vec of 6 above, byte for byte. Test vector: quest
+`3` weekly (`period_secs` = `604800`), week `2961`, everything else as above, `G…`
+recipient:
+
+```
+000000100000000100000008                                                  vec of 8
+0000000f00000018616c76696e6d756e6b5f61776172645f71756573745f7632          Symbol v2
+0000000d00000020cee0302d59844d32bdca915c8203dd44b33fbb7edc19051ea37abedf28ecd472  network id
+00000012000000011111111111111111111111111111111111111111111111111111111111111111  contract
+0000000300000003                                                          u32 3
+0000001200000000000000002222222222222222222222222222222222222222222222222222222222222222  recipient
+000000050000000000093a80                                                  u64 604800
+000000050000000000000b91                                                  u64 2961
+00000005000000006abda4d8                                                  u64 1790813400
+```
+
+`a_weekly_quest_payload_matches_the_documented_bytes` and `attest.test.ts` pin these too.
 The contract test `quest_payload_matches_the_documented_bytes` and the web test in
 `apps/web/src/lib/attest.test.ts` both pin these bytes. **Build the payload yourself**
 (`questPayload` in `apps/web/src/lib/attest.ts`); never sign bytes an RPC node hands back,
 since a dishonest node could return the payload for its own address.
 
 **Expiry.** `/api/attest` signs with `expires_at` = its clock + 600 s (`QUEST_SIG_TTL_SECS`)
-and returns `{ ok, attester, sig, expiresAt, recipient, questId }`; `attester` is the raw
+(capped at the last second of a repeatable quest's period) and returns
+`{ ok, attester, sig, expiresAt, recipient, questId }`; `attester` is the raw
 public key in hex, `sig` is base64. The client passes `expiresAt` back as the fifth
 `award_quest` argument. The ledger timestamp trails wall-clock time by up to one ledger
 close, so the window is the attester's clock skew plus that, not exact. At
@@ -1214,7 +1305,8 @@ with `SignatureExpired` (#8), and the user asks for a fresh signature.
 that does not verify (wrong key, or any payload field changed, `expires_at` included)
 traps in the host with `Error(Crypto, InvalidInput)`, not a contract code. Then come
 `recipient.require_auth()`, `QuestNotFound` (#4), `QuestInactive` (#6), `AlreadyClaimed`
-(#5) and `AttesterBudgetExceeded` (#7). A rejected award records no claim.
+(#5) and `AttesterBudgetExceeded` (#7). A rejected award records no claim. `InvalidPeriod`
+(#9) comes only from `set_quest_period`.
 
 **Migration.** Before issue #142 the payload was `[quest_id, recipient, contract]` (a vec of
 3) and `award_quest` took four arguments. Signatures over that payload never verify on the
@@ -1323,6 +1415,32 @@ pub struct RewardInfo {
 }
 ```
 
+### Reward status per wallet (`get_rewards_for`)
+
+```rust
+pub struct RewardStatus {
+    pub entry: RewardInfo, // the `get_rewards` row
+    pub claimed: bool,     // `is_claimed(entry.id, who)`
+    pub eligible: bool,    // reason == 0
+    pub reason: u32,       // the Error code `claim_reward` would revert with; 0 = none
+}
+
+pub fn get_rewards_for(who: Address) -> (Vec<RewardStatus>, i128)
+```
+
+One simulation for a wallet's whole reward table: every row of `get_rewards` (inactive
+ones included, in the same order) with `who`'s status, and the treasury budget left
+today in stroops — `get_daily_cap() - get_daily_paid()`, floored at `0`, or `-1` when no
+daily cap is set. `reason` runs `claim_reward`'s checks in its order without the
+transfer, so it is the first error the claim would revert with: `Paused` (#5), `Frozen`
+(#10), `NotFunded` (#12), `RewardInactive` (#7), `AlreadyClaimed` (#4), `RewardExhausted`
+(#13), `BelowThreshold` (#3), `QuestRegistryNotSet` (#19), `StreakTooShort` (#18),
+`DailyCapExceeded` (#9), then `TreasuryInsufficient` (#100) when the treasury's USDC
+balance can't cover the payout (#147; numbered above the SAC's 1–13 range). The first three
+are per wallet and so the same on every row. The Earned-XP, streak and treasury-balance
+reads run at most once per call. The view is read-only and
+takes no auth. A contract deployed before this view has no `get_rewards_for`.
+
 ### Daily cap (`get_daily_cap` / `get_daily_paid`)
 
 Both return `i128` USDC stroops. `get_daily_cap()` is the treasury's max payout per UTC
@@ -1382,7 +1500,8 @@ pub struct GateRules {
 `Gate`, which it writes active with the first rule's `track`/`min`. It reverts with
 `EmptyRules` (#8) for no rules, `TooManyRules` (#7) for more than `MAX_RULES` (4), and
 `BadTrack` (#6) for a track other than 0 or 1. Replacing a composite gate with
-`create_gate` drops its rule set. Replacing a gate either way keeps existing unlocks.
+`create_gate` drops its rule set. Replacing a gate either way starts a new definition, so
+its existing unlocks stop counting (see `UnlockRecord`).
 
 `get_gate_rules(id) -> Option<GateRules>` returns `None` for an unknown gate. A gate
 created by `create_gate`, or before composite gates existed, has no stored set and reads
@@ -1390,6 +1509,56 @@ as one `AllOf` rule built from its `Gate` fields. `check`/`unlock` read each rep
 track at most once per call, however many rules name it. A contract deployed before
 composite gates has no `get_gate_rules` or `create_gate_rules`; its gates keep working
 unchanged after an upgrade.
+
+### `UnlockRecord` (`get_unlock` / `is_unlocked` / `get_gate_version`)
+
+```rust
+pub struct UnlockRecord {
+    pub version: u32, // the gate's version when it was unlocked
+    pub ledger: u32,  // ledger sequence of the unlock
+}
+```
+
+`unlock` stores this under `Unlocked(addr, id)`; unlocking again replaces it.
+`get_gate_version(id) -> u32` counts the gate's redefinitions: `0` for a gate never
+replaced (and for an unknown id), `+1` on every `create_gate` / `create_gate_rules` for an
+existing id — including one that keeps the same rules. `set_gate_active` is not a
+redefinition and leaves the version alone.
+
+`is_unlocked(addr, id) -> bool` is true only while the gate is active **and** the stored
+record's `version` equals `get_gate_version(id)`, so an unlock earned under a weaker rule,
+or on another track, no longer reads as an unlock of the current gate. Disabling a gate
+hides its unlocks; re-enabling it without a redefinition brings them back.
+`get_unlock(addr, id) -> Option<UnlockRecord>` returns the latest record whether or not it
+still counts (`None` if `addr` never unlocked `id`).
+
+Before these records existed, `Unlocked` held a bare `true`. After an upgrade such an entry
+reads as `{ version: 0, ledger: 0 }`: it keeps counting until the gate's first
+redefinition, and the next `unlock` replaces it with a record. A contract deployed before
+this change has no `get_unlock` or `get_gate_version`.
+
+### Batch gate reads (`get_status` / `check_many`)
+
+```rust
+pub struct GateStatus {
+    pub gate: Gate,
+    pub passes: bool,   // check(addr, gate.id)
+    pub unlocked: bool, // is_unlocked(addr, gate.id)
+}
+
+pub fn get_status(addr: Address) -> Vec<GateStatus>
+pub fn check_many(addr: Address, ids: Vec<u32>) -> Vec<bool>
+```
+
+`get_status(addr)` returns every gate of `get_gates` (inactive ones included, same order)
+with the two per-address answers, all from one ledger. An inactive gate never `passes`
+and its unlocks don't count, exactly as with the single-gate reads; composite gates are
+evaluated on their whole rule set, and `unlocked` follows the `UnlockRecord` version rule
+above. `check_many(addr, ids)` answers `check` for each id in order (duplicates kept,
+`false` for an unknown or inactive gate). Both read each Reputation track at most once per
+call, however many gates or rules use it, and skip a track no active gate being evaluated
+needs. They are read-only and take no auth. A contract deployed before these views has no
+`get_status` or `check_many`.
 
 ---
 
@@ -1413,6 +1582,29 @@ export const EVENTS = {
   // handle, meta, gate, unlocked, streak, rwd_set, rwd_cap, rwd_strk, attester are not yet mirrored
 } as const;
 ```
+
+### Reading view structs (`Attestation`, `Vouch`, `Profile`)
+
+`Vouch` and `Profile` mirror the structs above field for field, every `u64` a
+`bigint` (what `scValToNative` hands back), and ship with `decodeVouch` /
+`decodeProfile`. A named-field `#[contracttype]` struct travels as an
+`ScVal::Map` keyed by field name, which `scValToNative` turns into a plain
+object: `Option<T>` is the value or `null` (`ScVal::Void`), `BytesN<32>` a
+32-byte buffer. The decoders take that object and accept exactly the fields in
+`VOUCH_FIELDS` / `PROFILE_FIELDS`, so a field added, dropped or renamed throws
+instead of reading as `undefined`. `get_vouch` for an id never minted decodes
+to `null`. `Attestation` has no decoder: its `value` (an `i128`) is a `bigint`,
+its `timestamp` a `number` of unix seconds.
+
+`contracts/reputation/testdata/read_views.json` holds real `get_vouch` /
+`get_profile` return values (the XDR of each `ScVal`, hex). The contract test
+`read_view_fixtures_match_the_contract` writes it from real calls and fails
+when it is stale (rerun with `UPDATE_READ_VIEWS=1`);
+`packages/shared/src/read-views.test.ts` decodes it through the mirrors and
+checks their field lists against `contracts/reputation/src/lib.rs`, and
+`apps/web/src/lib/read-views.test.ts` checks that the `@alvinmunk/sdk` views
+the app reads through decode it the same way. A drift on either side fails a
+test.
 
 ---
 

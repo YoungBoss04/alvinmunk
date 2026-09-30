@@ -54,6 +54,8 @@ pub enum Error {
     StreakTooShort = 18, // live weekly quest streak below the reward's minimum
     QuestRegistryNotSet = 19, // a streak gate needs `set_quest_registry` first
     SelfTip = 20,   // `tip` sender == receiver: a `tipped` event that moves no value
+    // New errors use 100+ to avoid the SAC's 1-13 error range. Keep legacy codes stable.
+    TreasuryInsufficient = 100,
 }
 
 /// `quest_registry::Streak`, decoded from the cross-contract `get_streak` read (the field
@@ -98,6 +100,18 @@ pub struct RewardInfo {
     pub min_streak: u32, // live weekly quest streak required; 0 = none
 }
 
+/// One reward row plus one wallet's claim status, as returned by `get_rewards_for`.
+/// `reason` is the `Error` code `claim_reward` would revert with right now (`0` = none),
+/// so `eligible == (reason == 0)`.
+#[contracttype]
+#[derive(Clone)]
+pub struct RewardStatus {
+    pub entry: RewardInfo,
+    pub claimed: bool,
+    pub eligible: bool,
+    pub reason: u32,
+}
+
 #[contracttype]
 #[derive(Clone)]
 pub enum DataKey {
@@ -123,10 +137,11 @@ pub struct RewardsContract;
 
 #[contractimpl]
 impl RewardsContract {
-    pub fn init(env: Env, admin: Address, usdc: Address, reputation: Address) {
-        if env.storage().instance().has(&DataKey::Admin) {
-            panic_with_error!(&env, Error::AlreadyInitialized);
-        }
+    /// Deploy-time setup (#127): `stellar contract deploy … -- --admin <ADDR> --usdc <SAC> --reputation <C…>` runs this inside
+    /// the deploy transaction, so nobody can claim the admin between deploy and setup —
+    /// there is no `init` to front-run. `upgrade` never runs a constructor: a contract
+    /// deployed before this change was set up by its old `init` and keeps that state.
+    pub fn __constructor(env: Env, admin: Address, usdc: Address, reputation: Address) {
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Usdc, &usdc);
         env.storage()
@@ -253,9 +268,10 @@ impl RewardsContract {
     }
 
     /// Point the rewards contract at the QuestRegistry whose `get_streak` gates
-    /// streak-gated rewards. Admin-only. `init` doesn't take it (deployed contracts keep
-    /// their init signature), so a deploy or upgrade calls this once; it can be re-pointed
-    /// after a QuestRegistry redeploy.
+    /// streak-gated rewards. Admin-only. The constructor doesn't take it (it keeps the
+    /// arguments the old `init` had, so the deploy scripts wire every contract the same
+    /// way), so a deploy or upgrade calls this once; it can be re-pointed after a
+    /// QuestRegistry redeploy.
     pub fn set_quest_registry(env: Env, quest_registry: Address) {
         Self::admin(&env).require_auth();
         env.storage()
@@ -336,6 +352,69 @@ impl RewardsContract {
             .unwrap_or(false)
     }
 
+    /// One-call reward status view for a wallet: every row of `get_rewards` with
+    /// `claimed`, `eligible` and the `reason` it can't be claimed, plus today's remaining
+    /// treasury budget in stroops (`-1` = no daily cap).
+    ///
+    /// `reason` runs `claim_reward`'s checks in the same order without the transfer, so it
+    /// is the first error the claim would revert with: `Paused`, `Frozen`, `NotFunded`,
+    /// `RewardInactive`, `AlreadyClaimed`, `RewardExhausted`, `BelowThreshold`,
+    /// `QuestRegistryNotSet`, `StreakTooShort`, then `DailyCapExceeded`. The Earned-XP and
+    /// streak cross-reads run at most once per call, and only when a row gets that far.
+    pub fn get_rewards_for(env: Env, who: Address) -> (Vec<RewardStatus>, i128) {
+        let cap = Self::daily_cap(&env);
+        let paid = Self::get_daily_paid(env.clone());
+        let remaining = if cap > 0 { (cap - paid).max(0) } else { -1 };
+
+        // The wallet-wide gates `claim_reward` checks first block every row alike.
+        let unfunded =
+            Self::get_require_funding(env.clone()) && !Self::is_funded(env.clone(), who.clone());
+        let blocked = if Self::is_paused(&env) {
+            Some(Error::Paused)
+        } else if Self::is_frozen(env.clone(), who.clone()) {
+            Some(Error::Frozen)
+        } else if unfunded {
+            Some(Error::NotFunded)
+        } else {
+            None
+        };
+
+        let mut score: Option<u64> = None;
+        let mut weeks: Option<u32> = None;
+        let mut treasury: Option<i128> = None;
+        let mut out = Vec::new(&env);
+        for entry in Self::get_rewards(env.clone()).iter() {
+            let claimed = Self::is_claimed(env.clone(), entry.id, who.clone());
+            let reason = if let Some(e) = blocked {
+                Some(e)
+            } else if !entry.active {
+                Some(Error::RewardInactive)
+            } else if claimed {
+                Some(Error::AlreadyClaimed)
+            } else if entry.max_claims > 0 && entry.claims >= entry.max_claims {
+                Some(Error::RewardExhausted)
+            } else if *score.get_or_insert_with(|| Self::earned(&env, &who)) < entry.threshold {
+                Some(Error::BelowThreshold)
+            } else if let Some(e) = Self::streak_block(&env, &who, entry.min_streak, &mut weeks) {
+                Some(e)
+            } else if let Some(e) = Self::daily_block(cap, paid, entry.amount) {
+                Some(e)
+            } else if *treasury.get_or_insert_with(|| Self::treasury_balance(&env)) < entry.amount {
+                // Same last check as `claim_reward`: the treasury can't cover this payout.
+                Some(Error::TreasuryInsufficient)
+            } else {
+                None
+            };
+            out.push_back(RewardStatus {
+                entry,
+                claimed,
+                eligible: reason.is_none(),
+                reason: reason.map_or(0, |e| e as u32),
+            });
+        }
+        (out, remaining)
+    }
+
     /// Claim a registered reward. Gated on the EARNED track only (keystone); the payout
     /// is the admin-stored amount; one claim per (reward, wallet).
     pub fn claim_reward(env: Env, to: Address, reward_id: u32) {
@@ -367,11 +446,7 @@ impl RewardsContract {
         // Cross-contract read of the EARNED track ONLY (belts/08-anti-sybil keystone):
         // social/vouch XP is NEVER cashable; the treasury is reachable only via
         // attester-verified quest XP.
-        let reputation: Address = env.storage().instance().get(&DataKey::Reputation).unwrap();
-        let func: Symbol = Symbol::new(&env, "get_earned"); // >9 chars => not symbol_short
-        let args = soroban_sdk::vec![&env, to.to_val()];
-        let score: u64 = env.invoke_contract(&reputation, &func, args);
-        if score < entry.threshold {
+        if Self::earned(&env, &to) < entry.threshold {
             panic_with_error!(&env, Error::BelowThreshold);
         }
 
@@ -383,10 +458,7 @@ impl RewardsContract {
         let min_streak = Self::min_streak(&env, reward_id);
         if min_streak > 0 {
             let quest_registry = Self::quest_registry(&env);
-            let func = Symbol::new(&env, "get_streak"); // >9 chars => not symbol_short
-            let streak: Streak =
-                env.invoke_contract(&quest_registry, &func, soroban_sdk::vec![&env, to.to_val()]);
-            if streak.weeks < min_streak {
+            if Self::streak_weeks(&env, &quest_registry, &to) < min_streak {
                 panic_with_error!(&env, Error::StreakTooShort);
             }
         }
@@ -405,9 +477,16 @@ impl RewardsContract {
             .unwrap_or_else(|| panic_with_error!(&env, Error::Overflow));
         Self::save_stats(&env, reward_id, &stats);
 
+        // An underfunded treasury gets its own error, not the SAC's balance error (#147).
+        if Self::treasury_balance(&env) < entry.amount {
+            panic_with_error!(&env, Error::TreasuryInsufficient);
+        }
         let usdc: Address = env.storage().instance().get(&DataKey::Usdc).unwrap();
-        let treasury = env.current_contract_address();
-        token::Client::new(&env, &usdc).transfer(&treasury, &to, &entry.amount);
+        token::Client::new(&env, &usdc).transfer(
+            &env.current_contract_address(),
+            &to,
+            &entry.amount,
+        );
 
         // The running claim count lets an indexer show "N of M claimed" without aggregating.
         env.events().publish(
@@ -522,6 +601,12 @@ impl RewardsContract {
 
     // --- internal ---
 
+    /// The treasury's USDC balance (this contract's own SAC balance).
+    fn treasury_balance(env: &Env) -> i128 {
+        let usdc: Address = env.storage().instance().get(&DataKey::Usdc).unwrap();
+        token::Client::new(env, &usdc).balance(&env.current_contract_address())
+    }
+
     /// Reject a tip that would move no value, BEFORE the SAC call and before the event
     /// (nothing is written either way — a revert rolls the whole invocation back).
     ///
@@ -596,14 +681,62 @@ impl RewardsContract {
             .extend_ttl(&key, BUMP_THRESHOLD, BUMP_EXTEND);
     }
 
-    fn not_paused(env: &Env) {
-        let paused: bool = env
-            .storage()
+    fn is_paused(env: &Env) -> bool {
+        env.storage()
             .instance()
             .get(&DataKey::Paused)
-            .unwrap_or(false);
-        if paused {
+            .unwrap_or(false)
+    }
+
+    fn not_paused(env: &Env) {
+        if Self::is_paused(env) {
             panic_with_error!(env, Error::Paused);
+        }
+    }
+
+    /// Cross-contract read of `who`'s EARNED track (the only cashable one).
+    fn earned(env: &Env, who: &Address) -> u64 {
+        let reputation: Address = env.storage().instance().get(&DataKey::Reputation).unwrap();
+        let func: Symbol = Symbol::new(env, "get_earned"); // >9 chars => not symbol_short
+        env.invoke_contract(&reputation, &func, soroban_sdk::vec![env, who.to_val()])
+    }
+
+    /// Cross-contract read of `who`'s live weekly quest streak.
+    fn streak_weeks(env: &Env, quest_registry: &Address, who: &Address) -> u32 {
+        let func = Symbol::new(env, "get_streak"); // >9 chars => not symbol_short
+        let streak: Streak =
+            env.invoke_contract(quest_registry, &func, soroban_sdk::vec![env, who.to_val()]);
+        streak.weeks
+    }
+
+    /// The error `claim_reward`'s streak gate would raise for a `min_streak` (0 = none).
+    /// The live streak is read once per call and kept in `weeks`.
+    fn streak_block(
+        env: &Env,
+        who: &Address,
+        min_streak: u32,
+        weeks: &mut Option<u32>,
+    ) -> Option<Error> {
+        if min_streak == 0 {
+            return None;
+        }
+        let Some(quest_registry) = env.storage().instance().get(&DataKey::QuestRegistry) else {
+            return Some(Error::QuestRegistryNotSet);
+        };
+        if *weeks.get_or_insert_with(|| Self::streak_weeks(env, &quest_registry, who)) < min_streak
+        {
+            Some(Error::StreakTooShort)
+        } else {
+            None
+        }
+    }
+
+    /// The error `charge_daily` would raise for one more payout of `amount` today.
+    fn daily_block(cap: i128, paid: i128, amount: i128) -> Option<Error> {
+        match paid.checked_add(amount) {
+            None => Some(Error::Overflow),
+            Some(next) if cap > 0 && next > cap => Some(Error::DailyCapExceeded),
+            Some(_) => None,
         }
     }
 

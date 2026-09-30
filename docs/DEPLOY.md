@@ -60,7 +60,7 @@ Rewards tips/claims move USDC through a Stellar Asset Contract (SAC). On testnet
 CAKT2EK2SFGNXTXVSYZLZXA5YB5QPVHLTVUMRHLJTF5RFFAFMIRNPZT2
 ```
 
-Or wrap/issue your own SAC and pass that id instead. Without a real SAC id, `deploy-testnet.sh` will still print placeholders — but tips, claims, and the faucet will not work until you set a valid one.
+Or wrap/issue your own SAC and pass that id instead. `USDC_SAC` is required: without a valid contract id (`C…`), `deploy-testnet.sh` exits before building or deploying anything. It also refuses any `NETWORK` other than `testnet` (the default) or `futurenet`.
 
 ---
 
@@ -90,9 +90,11 @@ NEXT_PUBLIC_USDC_SAC_ID=CAKT2EK2…
 
 Copy those four lines — you will paste them in the next step.
 
+Each contract id is also printed (`REP_ID=…`, `QUEST_ID=…`, `REWARDS_ID=…`) as soon as its deploy returns, so if a later step fails you still have every id deployed so far. Offline tests for the pre-flight checks: `bash scripts/deploy-testnet.test.sh` (stubs the CLI).
+
 ### Optional: registry + gate (handles + reputation gates)
 
-`deploy-testnet.sh` covers the core three contracts. Public `/u/<handle>` profiles and reputation gates need **registry** and **gate** as well. The maintainer one-shot that deploys all five (and seeds quests/rewards) is `scripts/redeploy-all.sh` — read it before running (it hard-codes an admin identity and attester pubkey). You can also deploy those two Wasm files manually with `stellar contract deploy` / `init` the same way the script does, then add:
+`deploy-testnet.sh` covers the core three contracts. Public `/u/<handle>` profiles and reputation gates need **registry** and **gate** as well. The maintainer one-shot that deploys all five (and seeds quests/rewards) is `scripts/redeploy-all.sh` — read it before running (it hard-codes an admin identity and attester pubkey). You can also deploy those two Wasm files manually the way the script does, passing the constructor's arguments after `--` (`stellar contract deploy --wasm … -- --admin <G…>` for registry, `-- --admin <G…> --reputation <reputation id>` for gate; there is no separate `init`, #127), then add:
 
 ```bash
 NEXT_PUBLIC_REGISTRY_CONTRACT_ID=C…
@@ -168,6 +170,16 @@ The app is a Next.js app under `apps/web` with serverless API routes (`/api/atte
 
 Confirm: open `https://<your-deploy>/api/health` and walk through onboarding on the production URL.
 
+### Ops scripts read the same ids
+
+`scripts/status.mjs`, `scripts/bump-ttl.sh`, `scripts/e2e-testnet.mjs` and `scripts/freeze-rings.mjs` have no built-in contract ids. They get the network, RPC/Horizon URLs and ids from [`scripts/lib/env.mjs`](../scripts/lib/env.mjs), which takes each value from the first of:
+
+1. the environment (the same `NEXT_PUBLIC_*` names as `.env.local`);
+2. `apps/web/.env.local`, when its `NEXT_PUBLIC_STELLAR_NETWORK` is the network the script runs on;
+3. [`deployments/testnet.json`](../deployments/testnet.json), the committed live testnet deployment (the README table). `scripts/redeploy-all.sh` rewrites it.
+
+A missing or malformed id stops the script with exit code 2 and names the variable, before any network call. `bump-ttl.sh` also accepts `REPUTATION`, `QUEST` and `REWARDS`, but only all three together. `node scripts/lib/env.mjs` prints the resolved values as `NEXT_PUBLIC_*=…` lines. Offline tests: `node --test scripts/lib/env.test.mjs scripts/status.test.mjs` and `bash scripts/bump-ttl.test.sh`.
+
 ---
 
 ## Troubleshooting
@@ -175,7 +187,7 @@ Confirm: open `https://<your-deploy>/api/health` and walk through onboarding on 
 | Symptom | Likely cause |
 | --- | --- |
 | `deploy-testnet.sh` fails on build | Missing Rust/`stellar` CLI, or wrong Wasm target — CLI 25+ writes to `contracts/target/wasm32v1-none/release/` |
-| `init` / `add_attester` fails | Admin not funded, or identity name mismatch (`ADMIN=` / `ATTESTER=` must match `stellar keys` names) |
+| A deploy or `add_attester` fails | Admin not funded, or identity name mismatch (`ADMIN=` / `ATTESTER=` must match `stellar keys` names) |
 | Health returns 503 | RPC unreachable or stalled (`rpc`), an inconsistent network config (`configErrors`), or a variable named in `missing` is unset |
 | Quest verify 500 | Missing `ATTESTER_SECRET_KEY`, or secret is not the allowlisted attester |
 | Faucet 500 | Missing `USDC_ISSUER_SECRET_KEY` or wrong SAC id |

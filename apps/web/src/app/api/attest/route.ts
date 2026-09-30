@@ -13,6 +13,10 @@
  *                   and name the recipient as its inviter: registry `invited_by` (any wallet
  *                   kind), else a classic account's "referral" manageData entry
  *
+ * Repeatable quests (#154, `quest_registry.set_quest_period`): the signature names the
+ * current period, and only evidence dated inside it counts — a PR merged, a vouch claimed
+ * this period. A referral can't be dated, so a repeatable quest can't take one.
+ *
  * Defense-in-depth (belts/08 §security): on-chain recipient.require_auth() ownership +
  * on-chain replay guard (the hard cap), each quest id bound to one evidence type, per-IP
  * rate limit, bounded body, optional GitHub repo allowlist, self-referral guard. The
@@ -28,10 +32,11 @@ import {
   nativeToScVal,
   scValToNative,
   rpc,
+  xdr,
 } from '@stellar/stellar-sdk';
 import {
+  FRESH_EVIDENCE,
   MAX_BODY_BYTES,
-  QUEST_SIG_TTL_SECS,
   REFERRAL_MARKER_KEY,
   VOUCH_BACK_MIN,
   buildQuestEvidenceMap,
@@ -41,12 +46,17 @@ import {
   isValidQuestId,
   judgeReferral,
   parseRepoAllowlist,
+  questWindow,
   repoAllowed,
   signQuestPayload,
+  signatureExpiry,
   validateEvidence,
+  WEEK_SECS,
   type AttestEvidence,
+  type QuestWindow,
 } from '../../../lib/attest';
 import { json, withRoute } from '../../../lib/api-route';
+import { decodeVouchClaimedEvent } from '../../../lib/vouch-claimed';
 // The app's one resolved (and validated) network config — no per-route testnet defaults — so
 // the attester signs for the same network, passphrase and contracts as the client.
 import { config, misconfiguredResponse } from '../../../lib/stellar';
@@ -85,6 +95,8 @@ const REGISTRY_ID = config.contracts.registry;
 const REPO_ALLOWLIST = parseRepoAllowlist(process.env.QUEST_GITHUB_REPOS);
 /** Safety cap on cursor-pagination pages for the vouch/claimed scan (1 000 events/page). */
 const VOUCH_CLAIMED_MAX_PAGES = 50;
+/** GitHub / Horizon reads give up after this long: a stalled connection can't hang the route. */
+const UPSTREAM_TIMEOUT_MS = 8_000;
 
 // questId → the one evidence type that may claim it (lib/attest.ts buildQuestEvidenceMap).
 const QUEST_EVIDENCE = buildQuestEvidenceMap(process.env);
@@ -142,35 +154,60 @@ export const POST = withRoute('POST /api/attest', async (req: Request): Promise<
     return json({ error: reason }, 422);
   }
 
-  // 3) A quest the recipient already completed can't be awarded again (the contract's
-  // replay guard), so stop before verifying evidence: no GitHub/Horizon/RPC quota spent and
-  // nothing signed. One read of `is_completed`; if it fails or the deployed contract
-  // predates the view, carry on — the on-chain guard still refuses the award.
+  // 3) A repeatable quest's signature names the current period, and its evidence must be
+  // dated inside it. A failed read signs as one-shot: for a repeatable quest that payload
+  // can't verify on-chain, so the mistake costs a retry, never an award.
+  const evidence = body.evidence as AttestEvidence;
+  const nowSecs = Math.floor(now / 1000);
+  const window = questWindow(nowSecs, await questPeriod(body.questId));
+  if (window && !FRESH_EVIDENCE.has(evidence.type)) {
+    return json({ error: 'this quest repeats, and a referral can’t be dated to this round' }, 422);
+  }
+  const round = window?.periodSecs === WEEK_SECS ? ' this week' : window ? ' this round' : '';
+
+  // 4) A quest the recipient already completed (this period, for a repeatable one) can't be
+  // awarded again (the contract's replay guard), so stop before verifying evidence: no
+  // GitHub/Horizon/RPC quota spent and nothing signed. One read of `is_completed`; if it
+  // fails or the deployed contract predates the view, carry on — the on-chain guard still
+  // refuses the award.
   if (await questCompleted(body.questId, body.recipient)) {
-    return json({ error: 'You’ve already completed this quest.' }, 409);
+    return json({ error: `You’ve already completed this quest${round}.` }, 409);
   }
 
-  // 4) Verify the real-world action (network).
-  const verified = await verifyEvidence(body.evidence as AttestEvidence, body.recipient);
-  if (!verified.ok) return json({ error: verified.reason }, 422);
+  // 5) Verify the real-world action (network).
+  const verified = await verifyEvidence(evidence, body.recipient, window);
+  if (!verified.ok) {
+    // 422 means the evidence itself failed. GitHub or Horizon being slow, down or
+    // rate-limiting keeps its own 5xx status and says a retry can work.
+    return 'status' in verified
+      ? json({ error: verified.reason, retryable: true }, verified.status)
+      : json({ error: verified.reason }, 422);
+  }
 
-  // 5) Sign the award payload, built here (never read from an RPC node). The recipient
+  // 6) Sign the award payload, built here (never read from an RPC node). The recipient
   // redeems it on-chain; the contract refuses it after `expiresAt` (unix seconds, compared
-  // with the ledger time, which tracks wall-clock time).
+  // with the ledger time, which tracks wall-clock time), which never passes the end of a
+  // repeatable quest's period.
   try {
-    const expiresAt = Math.floor(Date.now() / 1000) + QUEST_SIG_TTL_SECS;
+    const expiresAt = signatureExpiry(nowSecs, window);
     const ctx = { contractId: QUEST_ID, passphrase: PASSPHRASE };
-    const signed = signQuestPayload(secret, ctx, body.questId, body.recipient, expiresAt);
+    const signed = signQuestPayload(secret, ctx, body.questId, body.recipient, expiresAt, window);
     return json({ ok: true, ...signed, recipient: body.recipient, questId: body.questId });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : 'sign failed' }, 500);
   }
 });
 
+/**
+ * Check the real action behind `ev`. For a repeatable quest (`window`), only an action dated
+ * inside the current period counts, so the same PR or vouches can't be redeemed every period.
+ */
 async function verifyEvidence(
   ev: AttestEvidence,
   recipient: string,
-): Promise<{ ok: boolean; reason?: string }> {
+  window: QuestWindow | null,
+): Promise<{ ok: true } | { ok: false; reason: string } | UpstreamFailure> {
+  const since = window?.start ?? null;
   // Invite-converts (growth quest): the person you invited must have claimed a vouch
   // minted by the recipient. A Social score alone is not enough — any vouched wallet
   // could be unrelated to the inviter. The RPC only retains a limited event window, so a
@@ -178,11 +215,13 @@ async function verifyEvidence(
   if (ev.type === 'invite_converts') {
     if (!REP_ID) return { ok: false, reason: 'reputation contract not configured' };
     try {
-      if (await claimedVouchFrom(REP_ID, recipient, ev.ref)) return { ok: true };
+      if (await claimedVouchFrom(REP_ID, recipient, ev.ref, since)) return { ok: true };
       return {
         ok: false,
         reason:
-          "that wallet hasn't claimed a vouch from you recently — only claims still inside the network's recent event window can be verified for now",
+          since === null
+            ? "that wallet hasn't claimed a vouch from you recently — only claims still inside the network's recent event window can be verified for now"
+            : "that wallet hasn't claimed a vouch from you this round — this quest needs a new one each time",
       };
     } catch {
       return { ok: false, reason: "couldn't read the invite claim history right now — try again" };
@@ -199,10 +238,11 @@ async function verifyEvidence(
   if (ev.type === 'vouch_back') {
     if (!REP_ID) return { ok: false, reason: 'reputation contract not configured' };
     try {
-      const n = await countVouchesClaimedBy(REP_ID, recipient);
+      const n = await countVouchesClaimedBy(REP_ID, recipient, since);
+      const when = since === null ? 'so far' : 'this round';
       return n >= VOUCH_BACK_MIN
         ? { ok: true }
-        : { ok: false, reason: `vouch for ${VOUCH_BACK_MIN} people first (${n} claimed so far)` };
+        : { ok: false, reason: `vouch for ${VOUCH_BACK_MIN} people first (${n} claimed ${when})` };
     } catch {
       return { ok: false, reason: "couldn't read your vouch history right now — try again" };
     }
@@ -217,12 +257,16 @@ async function verifyEvidence(
     }
     const headers: Record<string, string> = { accept: 'application/vnd.github+json' };
     if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-    const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${num}`, {
-      headers,
-    });
-    if (!r.ok) return { ok: false, reason: `github ${r.status}` };
-    const pr = (await r.json()) as { merged?: boolean };
-    return pr.merged ? { ok: true } : { ok: false, reason: 'PR not merged' };
+    const url = `https://api.github.com/repos/${owner}/${repo}/pulls/${num}`;
+    const r = await getJson('github', url, headers);
+    if (!r.ok) return r;
+    if (!r.found) return { ok: false, reason: 'github 404' };
+    const pr = r.body as { merged?: boolean; merged_at?: string | null } | null;
+    if (pr?.merged !== true) return { ok: false, reason: 'PR not merged' };
+    if (since !== null && !(Date.parse(pr.merged_at ?? '') / 1000 >= since)) {
+      return { ok: false, reason: 'that PR was merged before this round — this quest needs a new one' };
+    }
+    return { ok: true };
   }
 
   if (ev.type === 'referral_tx') {
@@ -235,7 +279,12 @@ async function verifyEvidence(
     }
     const invitedBy = await readInvitedBy(ev.ref);
     // A registry binding decides on its own; the classic marker is only read without one.
-    const marker = invitedBy === null && isGAddress(ev.ref) ? await readReferralMarker(ev.ref) : null;
+    const read = invitedBy === null && isGAddress(ev.ref) ? await readReferralMarker(ev.ref) : null;
+    const failed = typeof read === 'object' && read !== null;
+    // A Horizon failure only decides where the marker would: a wallet with no score is
+    // refused on that alone (judgeReferral checks the score first).
+    if (failed && score > 0n) return read;
+    const marker = failed ? undefined : read;
     return judgeReferral({ score, invitedBy, marker }, ev.ref, recipient);
   }
 
@@ -285,49 +334,67 @@ async function readInvitedBy(addr: string): Promise<string | null | undefined> {
 
 /**
  * A classic account's `referral` manageData entry, decoded (Horizon): null when the account
- * or the entry doesn't exist, undefined when Horizon couldn't be read.
+ * or the entry doesn't exist, an UpstreamFailure when Horizon couldn't be read.
  */
-async function readReferralMarker(ref: string): Promise<string | null | undefined> {
+async function readReferralMarker(ref: string): Promise<string | null | UpstreamFailure> {
+  const r = await getJson('horizon', `${HORIZON}/accounts/${ref}`);
+  if (!r.ok) return r;
+  if (!r.found) return null;
+  const raw = (r.body as { data?: Record<string, unknown> } | null)?.data?.[REFERRAL_MARKER_KEY];
+  return typeof raw === 'string' ? decodeDataEntry(raw) : null;
+}
+
+/**
+ * GitHub or Horizon failing to answer. That says nothing about the evidence, so it is
+ * never a 422: 504 on a timeout, 503 when unreachable, rate-limited (403/429) or down
+ * (5xx), 502 on any other status or a body that isn't JSON.
+ */
+interface UpstreamFailure {
+  ok: false;
+  reason: string;
+  status: 502 | 503 | 504;
+}
+
+/**
+ * GET `url` as JSON, giving up after UPSTREAM_TIMEOUT_MS. A 404 (no such PR or account) is
+ * an answer, `found: false`, not a failure. Never throws.
+ */
+async function getJson(
+  upstream: 'github' | 'horizon',
+  url: string,
+  headers?: Record<string, string>,
+): Promise<
+  { ok: true; found: false } | { ok: true; found: true; body: unknown } | UpstreamFailure
+> {
+  const fail = (status: UpstreamFailure['status'], reason: string): UpstreamFailure => ({
+    ok: false,
+    reason: `${reason} — try again`,
+    status,
+  });
+  const timedOut = () => fail(504, `${upstream} timed out`);
+  let r: Response;
   try {
-    const r = await fetch(`${HORIZON}/accounts/${ref}`);
-    if (r.status === 404) return null;
-    if (!r.ok) return undefined;
-    const acct = (await r.json()) as { data?: Record<string, string> };
-    const raw = acct.data?.[REFERRAL_MARKER_KEY];
-    return raw ? decodeDataEntry(raw) : null;
-  } catch {
-    return undefined;
+    r = await fetch(url, { headers, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+  } catch (e) {
+    // Not only the timeout: a DNS failure or a connection reset rejects too.
+    return isTimeout(e) ? timedOut() : fail(503, `couldn’t reach ${upstream} right now`);
+  }
+  if (r.status === 404) return { ok: true, found: false };
+  if (!r.ok) {
+    // 403 is GitHub's unauthenticated rate limit (GITHUB_TOKEN unset), 429 its other one.
+    const busy = r.status === 403 || r.status === 429 || r.status >= 500;
+    return fail(busy ? 503 : 502, `${upstream} unavailable (${r.status})`);
+  }
+  try {
+    return { ok: true, found: true, body: await r.json() };
+  } catch (e) {
+    // The timeout also covers reading the body.
+    return isTimeout(e) ? timedOut() : fail(502, `${upstream} sent an unreadable answer`);
   }
 }
 
-/**
- * A decoded `vouch/claimed` event value: (vouch_id, from, claimer).
- * Mirrors contracts/reputation/src/lib.rs claim_vouch emit at line ~293.
- */
-export interface VouchClaimedEvent {
-  vouchId: string; // stringified u64
-  from: string;    // G/C address — the voucher
-  claimer: string; // G/C address — the person who claimed
-}
-
-/**
- * Decode one raw `vouch/claimed` event value (a 3-tuple ScVal) into a typed record.
- * Returns null for any event that cannot be decoded — callers skip those silently.
- * Exported so it can be unit-tested independently of the RPC layer.
- */
-export function decodeVouchClaimedEvent(
-  raw: unknown, // scValToNative output for one event's value
-): VouchClaimedEvent | null {
-  if (!Array.isArray(raw) || raw.length !== 3) return null;
-  const [id, from, claimer] = raw;
-  if (
-    (typeof id !== 'number' && typeof id !== 'bigint') ||
-    typeof from !== 'string' ||
-    typeof claimer !== 'string'
-  ) {
-    return null;
-  }
-  return { vouchId: String(id), from, claimer };
+function isTimeout(e: unknown): boolean {
+  return (e as { name?: unknown } | null)?.name === 'TimeoutError';
 }
 
 /** The ledger a stellar-rpc events cursor points at ("<toid>-<n>"; the ledger is the toid's top 32 bits). */
@@ -344,7 +411,7 @@ function cursorLedger(cursor: string): number | null {
  */
 async function scanVouchClaimed(
   repId: string,
-  visit: (claim: { from: string; claimer: string }) => boolean | void,
+  visit: (claim: { from: string; claimer: string; at: number }) => boolean | void,
 ): Promise<void> {
   const server = new rpc.Server(RPC_URL, { allowHttp: RPC_URL.startsWith('http://') });
   const health = await server.getHealth();
@@ -361,7 +428,8 @@ async function scanVouchClaimed(
     );
     for (const e of res.events) {
       const decoded = decodeVouchClaimedEvent(scValToNative(e.value));
-      if (decoded && visit(decoded) === true) return;
+      const at = Date.parse(e.ledgerClosedAt) / 1000; // NaN when the RPC omits it
+      if (decoded && visit({ ...decoded, at }) === true) return;
     }
     cursor = res.cursor;
     if (!cursor) return;
@@ -370,20 +438,59 @@ async function scanVouchClaimed(
   }
 }
 
-/** Distinct wallets that claimed a vouch minted by `from`, within the RPC's retention window. */
-async function countVouchesClaimedBy(repId: string, from: string): Promise<number> {
+/** Whether a claim at `at` (unix seconds) counts: any time, or from `since` on. An undated
+ *  claim never counts for a period. */
+const inRound = (at: number, since: number | null) => since === null || at >= since;
+
+/** Distinct wallets that claimed a vouch minted by `from`, within the RPC's retention window
+ *  (and from `since` on, when given). */
+async function countVouchesClaimedBy(repId: string, from: string, since: number | null): Promise<number> {
   const claimers = new Set<string>();
   await scanVouchClaimed(repId, (c) => {
-    if (c.from === from) claimers.add(c.claimer);
+    if (c.from === from && inRound(c.at, since)) claimers.add(c.claimer);
   });
   return claimers.size;
 }
 
-/** Whether `claimer` claimed a vouch minted by `from` within the RPC's retention window. */
-async function claimedVouchFrom(repId: string, from: string, claimer: string): Promise<boolean> {
+/** Whether `claimer` claimed a vouch minted by `from` within the RPC's retention window (and
+ *  from `since` on, when given). */
+async function claimedVouchFrom(
+  repId: string,
+  from: string,
+  claimer: string,
+  since: number | null,
+): Promise<boolean> {
   let found = false;
-  await scanVouchClaimed(repId, (c) => (found = c.from === from && c.claimer === claimer));
+  await scanVouchClaimed(
+    repId,
+    (c) => (found = c.from === from && c.claimer === claimer && inRound(c.at, since)),
+  );
   return found;
+}
+
+/**
+ * `quest_registry.get_quest_periods([quest_id])` via simulation: the quest's repeat period
+ * in seconds, `0` for a one-shot quest — and when the read fails for any reason (RPC error,
+ * or a deployed contract that predates repeatable quests). Signing a repeatable quest as
+ * one-shot is safe: the contract rebuilds the other payload and the signature fails.
+ */
+async function questPeriod(questId: number): Promise<number> {
+  try {
+    const server = new rpc.Server(RPC_URL, { allowHttp: RPC_URL.startsWith('http://') });
+    const source = new Account(Keypair.random().publicKey(), '0');
+    const ids = xdr.ScVal.scvVec([nativeToScVal(questId, { type: 'u32' })]);
+    const tx = new TransactionBuilder(source, { fee: '100', networkPassphrase: PASSPHRASE })
+      .addOperation(new Contract(QUEST_ID).call('get_quest_periods', ids))
+      .setTimeout(30)
+      .build();
+    const sim = await server.simulateTransaction(tx);
+    if (rpc.Api.isSimulationError(sim) || !sim.result?.retval) return 0;
+    const v = scValToNative(sim.result.retval) as unknown;
+    const period = Array.isArray(v) && v.length === 1 ? Number(v[0]) : 0;
+    return Number.isSafeInteger(period) && period > 0 ? period : 0;
+  } catch {
+    return 0;
+  }
 }
 
 /**
