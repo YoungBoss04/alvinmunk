@@ -67,8 +67,11 @@ function typeaheadMatch(
  * only declaring the role: focus moves into the menu on open, arrows / Home / End / typeahead
  * rove through the items, Enter or Space activates, Escape closes and hands focus back to
  * the button, and anything that moves focus out closes the menu.
+ *
+ * `onNavigate` runs when one of its links ("Open app", "View profile") is followed, so a
+ * container such as the mobile nav panel can close itself without reacting to other clicks.
  */
-export function ConnectButton() {
+export function ConnectButton({ onNavigate }: { onNavigate?: () => void } = {}) {
   const t = useTranslations();
   const { locale } = useLocale();
   const { profile, balance, disconnect } = useWallet();
@@ -184,7 +187,7 @@ export function ConnectButton() {
 
   if (!profile) {
     return (
-      <Link href="/app" className={cn(buttonVariants({ size: 'sm' }))}>
+      <Link href="/app" onClick={onNavigate} className={cn(buttonVariants({ size: 'sm' }))}>
         {t('wallet.openApp')}
       </Link>
     );
@@ -218,12 +221,12 @@ export function ConnectButton() {
         className="inline-flex items-center gap-2 rounded-full border border-border bg-card/60 py-1 pl-1 pr-2.5 transition-colors hover:bg-muted"
       >
         <Crest address={profile.address} handle={profile.handle} size={28} points={5} />
-        <span className="text-sm font-medium">@{profile.handle}</span>
+        <span className="text-sm font-medium">@${profile.handle}</span>
         <ChevronDown className={cn('size-4 text-muted-foreground transition-transform', open && 'rotate-180')} />
       </button>
 
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-60 rounded-xl border border-border bg-popover p-1.5 shadow-card">
+        <div className="absolute right-0 z-50 mt-2 w-60 rounded-xl border border-border bg-popover p-1.5 shadow-popover">
           <div className="px-3 py-2">
             <p className="font-mono text-xs text-muted-foreground">{shortAddr(profile.address)}</p>
             {balance != null && (
@@ -240,7 +243,10 @@ export function ConnectButton() {
             <Link
               href={`/u/${profile.handle}`}
               {...itemProps(0)}
-              onClick={() => closeMenu(true)}
+              onClick={() => {
+                closeMenu(true);
+                onNavigate?.();
+              }}
               className={item}
             >
               <User /> {t('wallet.viewProfile')}

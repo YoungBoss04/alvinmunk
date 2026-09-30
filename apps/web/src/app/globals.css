@@ -60,11 +60,6 @@
   --nebula-b: 24 70% 18%;
   --aurora-base: 228 40% 7%;
   --glass-shadow: 230 60% 2%;
-  --shadow-popover: 230 60% 2%;
-  --shadow-toast: 230 60% 2%;
-  --shadow-card-color: 230 60% 2%;
-  --shadow-card-strength: 0.5;
-  --shadow-popover-strength: 0.6;
 }
 
 /* Light theme — mirrors the HSL token set with a pale violet base. */
@@ -106,11 +101,6 @@
   --nebula-b: 24 70% 82%;
   --aurora-base: 228 40% 96%;
   --glass-shadow: 230 40% 30%;
-  --shadow-popover: 230 40% 30%;
-  --shadow-toast: 230 40% 30%;
-  --shadow-card-color: 230 40% 30%;
-  --shadow-card-strength: 0.12;
-  --shadow-popover-strength: 0.16;
 }
 
 
@@ -192,14 +182,14 @@
     border: 1px solid hsl(var(--hairline) / 0.07);
     box-shadow:
       inset 0 1px 0 0 hsl(var(--hairline) / 0.06),
-      0 24px 60px -28px hsl(var(--glass-shadow) / var(--shadow-card-strength));
+      0 24px 60px -28px hsl(var(--glass-shadow) / 0.8);
   }
 
   /* Faint technical grid — the "engineered" motif from chain sites, masked to fade out. */
   .grid-faint {
     background-image:
       linear-gradient(hsl(var(--hairline) / 0.04) 1px, transparent 1px),
-      linear-gradient(90deg, hsl(var(--hairline) / 0.04) 1px, transparent 1px);
+      linear-gradient(90deg,hsl(var(--hairline) / 0.04) 1px, transparent 1px);
     background-size: 44px 44px;
     -webkit-mask-image: radial-gradient(circle at 50% 40%, black 0%, transparent 78%);
     mask-image: radial-gradient(circle at 50% 40%, black 0%, transparent 78%);
@@ -232,23 +222,6 @@
 
   .text-glow {
     text-shadow: 0 0 28px hsl(var(--primary) / 0.35);
-  }
-
-  /* Theme-aware elevation shadows — read CSS variables so they follow the theme. */
-  .shadow-card {
-    box-shadow:
-      inset 0 1px 0 0 hsl(var(--hairline) / 0.06),
-      0 24px 60px -28px hsl(var(--shadow-card-color) / var(--shadow-card-strength));
-  }
-  .shadow-popover {
-    box-shadow:
-      inset 0 1px 0 0 hsl(var(--hairline) / 0.06),
-      0 16px 40px -20px hsl(var(--shadow-popover) / var(--shadow-popover-strength));
-  }
-  .shadow-toast {
-    box-shadow:
-      inset 0 1px 0 0 hsl(var(--hairline) / 0.06),
-      0 12px 32px -16px hsl(var(--shadow-toast) / var(--shadow-popover-strength));
   }
 
   /* Eyebrow — the small uppercase kicker above headings (chain-site rhythm). */
@@ -287,7 +260,7 @@
     z-index: 1;
     pointer-events: none;
     opacity: 0.035;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)]'/%3E%3C/svg%3E");
   }
 }
 
